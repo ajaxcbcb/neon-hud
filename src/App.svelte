@@ -1,216 +1,216 @@
-<script lang="ts">
-  import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
-  import { getCurrentWindow, availableMonitors } from '@tauri-apps/api/window';
-  import { LogicalSize, PhysicalPosition } from '@tauri-apps/api/dpi';
-  import Hud from './components/Hud.svelte';
-  import Icon from './components/Icon.svelte';
-  import { DrainTracker, drainText } from './lib/drain';
-  import { defaults, normalizeSettings, sampleSystem, sampleProviders, selectedNetwork, remaining, countdown, windowStatus } from './lib/model';
-  import type { Settings, SystemSnapshot, ProviderSnapshot, Surface } from './lib/model';
-  import { native, loadSettings, saveSettings, systemSnapshot, providerSnapshot, openLink } from './lib/backend';
-
-  let settings: Settings = structuredClone(defaults);
-  let loaded = false;
-  let configure = true;
-  let snapshot: SystemSnapshot | null = null;
-  let providers: ProviderSnapshot = { usages: [], attention: [] };
-  let now = Date.now() / 1000;
-  let history: { down: number; up: number }[] = [];
-  let monitors: string[] = ['Current display'];
-  let busy = false;
-  let error = '';
-  let notice = '';
-  let providerDetail: Surface | null = null;
-  let demoQuestion = 0;
-  let seenAlerts = new Set<string>();
-  let historyInterface = '';
-  const drainTracker = new DrainTracker();
-  let stop = false;
-  let saveTimer: ReturnType<typeof setTimeout>;
-  $: previewProviders = { ...sampleProviders(now), attention: demoQuestion ? [{ id: `demo-${demoQuestion}`, surface: 'claude-code' as Surface, reason: 'Sample question', occurredAt: now, sessionId: 'preview' }] : [] };
-  $: if (loaded) { settings; scheduleSave(); }
-
-  function scheduleSave() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => saveSettings(normalizeSettings(settings)).catch(() => { error = 'Settings could not be saved. Check write access to the app data folder.'; }), 350);
-  }
-  async function applyWindow() {
-    if (!native) return;
-    const win = getCurrentWindow();
-    await win.setAlwaysOnTop(configure ? false : settings.alwaysOnTop);
-    await win.setResizable(configure);
-    await win.setMinSize(new LogicalSize(configure ? 430 : 300, configure ? 540 : 200));
-    await win.setSize(new LogicalSize(configure ? 760 : (settings.size === 'compact' ? 360 : 680) * settings.textScale, configure ? 680 : (settings.size === 'compact' ? 210 : 500) * settings.textScale));
-    if (configure) { await win.center(); return; }
-    const displays = await availableMonitors();
-    const monitor = displays[settings.monitor] || displays[0];
-    if (!monitor) return;
-    const area = monitor.workArea;
-    const size = await win.outerSize();
-    const padding = Math.round(20 * monitor.scaleFactor);
-    const x = settings.corner.endsWith('right') ? area.position.x + area.size.width - size.width - padding : area.position.x + padding;
-    const y = settings.corner.startsWith('bottom') ? area.position.y + area.size.height - size.height - padding : area.position.y + padding;
-    await win.setPosition(new PhysicalPosition(Math.max(area.position.x, x), Math.max(area.position.y, y)));
-  }
-  async function openConfiguration() { configure = true; providerDetail = null; settings.step = 1; await applyWindow(); }
-  async function finish() {
-    busy = true; error = '';
-    try {
-      settings = normalizeSettings({ ...settings, completed: true, step: 1 });
-      if (native) await invoke('set_preferences', { launchAtLogin: settings.launchAtLogin, notifications: settings.notifications });
-      await saveSettings(settings);
-      configure = false;
-      providerDetail = null;
-      await applyWindow();
-    } catch { error = 'Configuration could not be applied. Check app permissions and try again.'; }
-    finally { busy = false; }
-  }
-  async function refreshSystem() {
-    if (document.hidden || stop) return;
-    try {
-      snapshot = await systemSnapshot();
-      const network = selectedNetwork(snapshot, settings.interface);
-      if (network) {
-        if (historyInterface !== network.name) { history = []; historyInterface = network.name; }
-        history = [...history, { down: network.down, up: network.up }].slice(-30);
-      } else history = [];
-    } catch { snapshot = null; }
-  }
-  async function refreshProviders() {
-    if (document.hidden || stop) return;
-    try {
-      providers = await providerSnapshot();
-      drainTracker.observe(providers.usages, Date.now() / 1000);
-      const fresh = providers.attention.filter(a => !seenAlerts.has(a.id));
-      if (fresh.length && settings.notifications && native) await invoke('notify_attention', { surfaces: [...new Set(fresh.map(a => a.surface))] });
-      seenAlerts = new Set(providers.attention.map(a => a.id));
-    } catch { error = 'AI sources could not be refreshed. System monitoring can continue.'; }
-  }
-  async function connectCodex() {
-    busy = true; error = ''; notice = '';
-    try {
-      if (!native) { notice = 'Install Neon HUD to connect the local Codex CLI.'; return; }
-      settings.codexEnabled = true;
-      await saveSettings(settings);
-      notice = await invoke<string>('connect_codex');
-      await refreshProviders();
-    } catch { error = 'Codex could not connect. Install the Codex CLI, then try again. Existing login is reused through its supported app-server.'; }
-    finally { busy = false; }
-  }
-  async function connectClaude() {
-    busy = true; error = ''; notice = '';
-    try {
-      if (!native) { notice = 'Install Neon HUD to enable the Claude Code bridge.'; return; }
-      notice = await invoke<string>('install_claude_bridge');
-      await refreshProviders();
-    } catch { error = 'The Claude bridge could not be installed. Check access to Claude Code settings and retry.'; }
-    finally { busy = false; }
-  }
-  async function disconnectCodex() {
-    settings.codexEnabled = false;
-    await saveSettings(settings);
-    if (native) await invoke('disconnect_codex');
-    await refreshProviders();
-  }
-  async function removeClaudeBridge() {
-    if (!native) return;
-    try { notice = await invoke<string>('remove_claude_bridge'); await refreshProviders(); }
-    catch { error = 'The Claude bridge could not be removed. See the connection guide for recovery.'; }
-  }
-  async function toggleSize() { settings.size = settings.size === 'compact' ? 'expanded' : 'compact'; await applyWindow(); }
-  async function hide() { if (native) await getCurrentWindow().hide(); else notice = 'The desktop app hides to the system tray or menu bar.'; }
-  async function showProvider(surface: string) {
-    providerDetail = surface as Surface;
-    if (native && !configure) {
-      await getCurrentWindow().setSize(new LogicalSize(680, 440));
-    }
-  }
-  async function closeProvider() { providerDetail = null; await applyWindow(); }
-  onMount(() => {
-    const cleanups: (() => void)[] = [];
-    (async () => {
-      settings = await loadSettings();
-      configure = !settings.completed;
-      loaded = true;
-      if (native) {
-        monitors = (await availableMonitors()).map((m, i) => m.name || `Display ${i + 1}`);
-        cleanups.push(await listen('open-settings', openConfiguration));
-        cleanups.push(await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); await hide(); }));
-        if (settings.codexEnabled) invoke('connect_codex', { login: false }).catch(() => {});
-        await applyWindow();
-        await getCurrentWindow().show();
-      }
-      await refreshSystem(); await refreshProviders();
-    })().catch(() => { loaded = true; error = 'Some startup settings could not be loaded. You can continue configuring the HUD.'; });
-    const timer = setInterval(() => { if (!document.hidden) now = Date.now() / 1000; }, 1000);
-    const systemTimer = setInterval(refreshSystem, 2000);
-    const providerTimer = setInterval(refreshProviders, 5000);
-    const recover = setInterval(async () => {
-      if (!native || configure || document.hidden) return;
-      try {
-        const displays = await availableMonitors();
-        const win = getCurrentWindow();
-        const p = await win.outerPosition();
-        const visible = displays.some(m => p.x >= m.workArea.position.x && p.y >= m.workArea.position.y && p.x < m.workArea.position.x + m.workArea.size.width - 40 && p.y < m.workArea.position.y + m.workArea.size.height - 40);
-        if (!visible) await applyWindow();
-      } catch { /* A display may disappear during enumeration. Retry next interval. */ }
-    }, 15000);
-    const resume = () => { if (!document.hidden) { refreshSystem(); refreshProviders(); } };
-    document.addEventListener('visibilitychange', resume);
-    return () => { stop = true; clearTimeout(saveTimer); [timer, systemTimer, providerTimer, recover].forEach(clearInterval); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
-  });
-</script>
-
-<main data-theme={settings.theme} data-motion={settings.motion} class:reduced-motion={settings.reducedMotion} class:configuration={configure} style={`--panel-opacity:${settings.opacity};--text-scale:${settings.textScale}`}>
-  {#if !loaded}<div class="loading">Starting Neon HUD…</div>
-  {:else if configure}
-    <header class="setup-header" data-tauri-drag-region><div class="hud-brand"><span class="brand-mark">N</span><span>NEON <b>HUD</b></span></div><span class="setup-tag">PERSONAL COMMAND CENTER</span><button class="icon-button" aria-label="Hide configuration" onclick={hide}><Icon name="close"/></button></header>
-    <nav class="steps" aria-label="Configuration progress">
-      {#each ['Appearance', 'Connections', 'Preferences'] as label, index}<button class:active={settings.step === index + 1} aria-current={settings.step === index + 1 ? 'step' : undefined} onclick={() => settings.step = index + 1}><span>{index + 1}</span>{label}</button>{/each}
-    </nav>
-    {#key settings.step}<div class="setup-content">
-      {#if settings.step === 1}
-        <div class="page-intro"><span class="eyebrow">STEP 01 / YOUR SPACE</span><h1>Make your HUD yours<span>.</span></h1><p>A little cockpit for your machine and your AI. Choose the look, then connect your sources.</p></div>
-        <div class="appearance-layout"><div class="appearance-controls">
-          <fieldset class="theme-picker"><legend>Choose your atmosphere</legend>
-            {#each [{ id: 'circuit', name: 'Neon Circuit', caption: 'Cyan + mint. Sharp and focused.' }, { id: 'cyberpunk', name: 'Cyberpunk Night', caption: 'Violet + magenta. After hours.' }, { id: 'aurora', name: 'Aurora', caption: 'Mint + lavender. A softer glow.' }] as theme}
-              <button class="theme-option {theme.id}" class:selected={settings.theme === theme.id} aria-pressed={settings.theme === theme.id} onclick={() => settings.theme = theme.id as Settings['theme']}><span class="theme-swatches"><i></i><i></i><i></i></span><span><b>{theme.name}</b><small>{theme.caption}</small></span><span class="theme-check">{#if settings.theme === theme.id}<Icon name="check" size={16}/>{/if}</span></button>
-            {/each}
-          </fieldset>
-          <label for="motion">Motion<select id="motion" bind:value={settings.motion}><option value="chaotic">Chaotic � neon mischief</option><option value="playful">Playful � springy interactions</option><option value="quiet">Quiet � minimal motion</option></select></label><label for="size">Size<select id="size" bind:value={settings.size}><option value="compact">Floating · 360 × 210</option><option value="expanded">Expanded · 680 × 500</option></select></label><details class="advanced-settings"><summary>Placement & readability</summary><label for="corner">Position<select id="corner" bind:value={settings.corner}><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
-          <label for="monitor">Display<select id="monitor" bind:value={settings.monitor}>{#each monitors as monitor, index}<option value={index}>{monitor}</option>{/each}</select></label>
-          <div class="form-grid"><label for="opacity">Panel opacity <b>{(settings.opacity * 100).toFixed(0)}%</b><input id="opacity" type="range" min="0.85" max="1" step="0.01" bind:value={settings.opacity}/></label><label for="text-scale">Text size <b>{(settings.textScale * 100).toFixed(0)}%</b><input id="text-scale" type="range" min="0.9" max="1.15" step="0.05" bind:value={settings.textScale}/></label></div>
-          <label class="toggle" for="always-top"><input id="always-top" type="checkbox" bind:checked={settings.alwaysOnTop}/><span>Keep HUD above other windows</span></label></details>
-        </div><div class="preview-area"><div class="preview-heading"><span>LIVE PREVIEW</span><span class="sample-pill">SAMPLE DATA</span></div><div class="preview-stage"><Hud settings={{...settings, size: 'compact'}} snapshot={sampleSystem} providers={previewProviders} {now} preview/></div><p class="preview-caption">The preview shows sample readings. Your real metrics appear after setup.</p><div class="preview-feature"><Icon name="cpu"/><span>System metrics stay on your device.</span></div><div class="preview-feature"><Icon name="question"/><span>AI icons signal when a connected session needs you.</span></div><button class="text-button demo-question" onclick={() => demoQuestion += 1}><Icon name="question" size={14}/> Test a sample question shake</button></div></div>
-      {:else if settings.step === 2}
-        <div class="page-intro"><span class="eyebrow">STEP 02 / YOUR SOURCES</span><h1>Connect your AI<span>.</span></h1><p>Your providers manage sign-in. Neon HUD receives supported usage readings, never your passwords.</p></div>
-        <div class="connection-grid">{#each ['chatgpt', 'codex', 'claude', 'claude-code'] as surface}
-          {@const usage = providers.usages.find(p => p.surface === surface)}
-          <article class="connection-card"><div class="connection-title"><Icon name={surface} size={26}/><h2>{surface === 'chatgpt' ? 'ChatGPT' : surface === 'codex' ? 'Codex' : surface === 'claude' ? 'Claude' : 'Claude Code'}</h2><span class="connection-state">{usage?.state === 'connected' ? 'Connected' : surface === 'chatgpt' ? 'Limited access' : 'Local source'}</span></div>
-            <p>{surface === 'chatgpt' ? 'Chat quotas are separate from Codex. No supported automatic chat quota source is available in this version.' : surface === 'codex' ? 'Read the account allowance through the official Codex app-server. Existing Codex sign-in can be reused.' : surface === 'claude' ? 'Claude and Claude Code share account limits when signed in to the same account. Readings come from the Code bridge.' : 'Add a local statusline and question observer. Existing settings are backed up and preserved.'}</p>
-            <div class="source-note">{usage?.message || 'Not connected'}{#if usage?.fetchedAt} · Updated {new Date(usage.fetchedAt * 1000).toLocaleTimeString()}{/if}</div>
-            <div class="connection-actions">{#if surface === 'codex'}<button class="secondary" disabled={busy} onclick={connectCodex}>Connect Codex</button>{#if settings.codexEnabled}<button class="text-button" onclick={disconnectCodex}>Disconnect</button>{/if}<button class="text-button" onclick={() => openLink('codex-install')}>Install CLI ↗</button>
-            {:else if surface === 'claude-code'}<button class="secondary" disabled={busy} onclick={connectClaude}>Enable bridge</button><button class="text-button" onclick={removeClaudeBridge}>Remove bridge</button><button class="text-button" onclick={() => openLink(surface)}>Install CLI ↗</button>
-            {:else}<button class="secondary" onclick={() => openLink(surface)}>Open provider ↗</button>{/if}</div>
-          </article>
-        {/each}</div><p class="connection-footnote">Optional connections. Claude readings become available after an assistant response. Question detection applies to connected Claude Code sessions; existing Codex desktop conversations are not automatically observed.</p>
-      {:else}
-        <div class="page-intro"><span class="eyebrow">STEP 03 / YOUR RHYTHM</span><h1>Keep it useful<span>.</span></h1><p>Pick what stays visible and when your HUD should get your attention.</p></div>
-        <div class="preferences-grid"><section class="preferences-panel"><h2>Visible metrics</h2>{#each [{key:'cpu',label:'CPU activity'},{key:'ram',label:'Memory usage'},{key:'network',label:'Network traffic'},{key:'ai',label:'AI allowance'}] as metric}<label class="toggle" for={`metric-${metric.key}`}><input id={`metric-${metric.key}`} type="checkbox" bind:checked={settings.metrics[metric.key as keyof Settings['metrics']]}/><Icon name={metric.key === 'ai' ? 'codex' : metric.key}/><span>{metric.label}</span></label>{/each}<label for="interface">Network interface<select id="interface" bind:value={settings.interface}><option value="auto">Automatic · default route</option>{#each snapshot?.networks || [] as network}<option value={network.name}>{network.name}</option>{/each}</select></label><p class="field-hint">One interface at a time avoids counting VPN traffic twice. System readings refresh every two seconds.</p></section>
-        <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section></div>
-      {/if}
-      {#if error}<div class="feedback error" role="alert">{error}</div>{/if}
-      {#if notice}<div class="feedback" role="status">{notice}</div>{/if}
-    </div>{/key}
-    <footer class="setup-footer"><span>LOCAL FIRST <i>·</i> SMALL BY DESIGN</span><div>{#if settings.step > 1}<button class="secondary" onclick={() => settings.step -= 1}>Back</button>{/if}{#if settings.completed}<button class="text-button" onclick={finish}>Return to HUD</button>{/if}{#if settings.step < 3}<button class="primary" onclick={() => settings.step += 1}>{settings.step === 1 ? 'Next: Connect sources' : 'Next: Preferences'}<Icon name="arrow" size={17}/></button>{:else}<button class="primary" disabled={busy} onclick={finish}>Open my HUD<Icon name="arrow" size={17}/></button>{/if}</div></footer>
-  {:else if providerDetail}
-    <section class="provider-dialog"><header><h1>{providerDetail === 'codex' ? 'ChatGPT & Codex' : 'Claude'} usage</h1><button class="icon-button" aria-label="Close usage details" onclick={closeProvider}><Icon name="close"/></button></header>
-      {#each providers.usages.filter(u => providerDetail === 'codex' ? ['chatgpt','codex'].includes(u.surface) : ['claude','claude-code'].includes(u.surface)) as usage}<article><h2>{usage.surface === 'chatgpt' ? 'ChatGPT chat' : usage.surface === 'codex' ? 'Codex account' : usage.surface === 'claude' ? 'Claude shared account' : 'Claude Code bridge'}</h2><p>{usage.message}</p>{#each usage.windows as quota}<div class="quota-line"><span>{quota.label}</span><div class="meter"><span style={`width:${remaining(quota.usedPercent)}%`}></span></div><b>{remaining(quota.usedPercent).toFixed(0)}% left</b><small>{countdown(quota.resetsAt,now)} · {windowStatus(quota,usage.fetchedAt,now)}</small></div><p class="drain-detail">{drainText(drainTracker.reading(usage, quota, now))} · time-weighted average, up to 30 min</p>{/each}{#if usage.tokenUsage}{@const tokenRate = drainTracker.tokenReading(usage, now)}<p class="token-reading">{usage.tokenUsage.total.toLocaleString()} reported tokens this session · {tokenRate ? `${tokenRate.perMinute.toFixed(0)} tokens/min average over ${(tokenRate.observedSeconds / 60).toFixed(0)} min${tokenRate.fast ? " · Fast token drain" : ""}` : "Collecting ≥2 min of token readings"}</p>{/if}<small class="source-note">Source: {usage.source} · {usage.fetchedAt ? `Last reading ${new Date(usage.fetchedAt * 1000).toLocaleString()}` : 'No reading'}</small></article>{/each}
-      {#each providers.attention.filter(a => providerDetail === 'codex' ? a.surface === 'codex' : a.surface === 'claude-code' || a.surface === 'claude') as attention}<div class="feedback"><Icon name="question"/> {attention.reason} · Return to your {attention.surface} session to answer. <button class="text-button" onclick={async () => { if (native) await invoke('dismiss_attention', { id: attention.id }); await refreshProviders(); }}>Dismiss badge</button></div>{/each}
-      <button class="secondary" onclick={() => openLink(providerDetail || 'chatgpt')}>Open provider usage ↗</button>
-      {#if error}<div class="feedback error" role="alert">{error}</div>{/if}
-    </section>
-  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}><Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider}/></div>{/if}
-</main>
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWindow, availableMonitors } from '@tauri-apps/api/window';
+  import { LogicalSize, PhysicalPosition } from '@tauri-apps/api/dpi';
+  import Hud from './components/Hud.svelte';
+  import Icon from './components/Icon.svelte';
+  import { DrainTracker, drainText } from './lib/drain';
+  import { defaults, normalizeSettings, sampleSystem, sampleProviders, selectedNetwork, remaining, countdown, windowStatus } from './lib/model';
+  import type { Settings, SystemSnapshot, ProviderSnapshot, Surface } from './lib/model';
+  import { native, loadSettings, saveSettings, systemSnapshot, providerSnapshot, openLink } from './lib/backend';
+
+  let settings: Settings = structuredClone(defaults);
+  let loaded = false;
+  let configure = true;
+  let snapshot: SystemSnapshot | null = null;
+  let providers: ProviderSnapshot = { usages: [], attention: [] };
+  let now = Date.now() / 1000;
+  let history: { down: number; up: number }[] = [];
+  let monitors: string[] = ['Current display'];
+  let busy = false;
+  let error = '';
+  let notice = '';
+  let providerDetail: Surface | null = null;
+  let demoQuestion = 0;
+  let seenAlerts = new Set<string>();
+  let historyInterface = '';
+  const drainTracker = new DrainTracker();
+  let stop = false;
+  let saveTimer: ReturnType<typeof setTimeout>;
+  $: previewProviders = { ...sampleProviders(now), attention: demoQuestion ? [{ id: `demo-${demoQuestion}`, surface: 'claude-code' as Surface, reason: 'Sample question', occurredAt: now, sessionId: 'preview' }] : [] };
+  $: if (loaded) { settings; scheduleSave(); }
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveSettings(normalizeSettings(settings)).catch(() => { error = 'Settings could not be saved. Check write access to the app data folder.'; }), 350);
+  }
+  async function applyWindow() {
+    if (!native) return;
+    const win = getCurrentWindow();
+    await win.setAlwaysOnTop(configure ? false : settings.alwaysOnTop);
+    await win.setResizable(configure);
+    await win.setMinSize(new LogicalSize(configure ? 430 : 300, configure ? 540 : 200));
+    await win.setSize(new LogicalSize(configure ? 760 : (settings.size === 'compact' ? 360 : 680) * settings.textScale, configure ? 680 : (settings.size === 'compact' ? 210 : 500) * settings.textScale));
+    if (configure) { await win.center(); return; }
+    const displays = await availableMonitors();
+    const monitor = displays[settings.monitor] || displays[0];
+    if (!monitor) return;
+    const area = monitor.workArea;
+    const size = await win.outerSize();
+    const padding = Math.round(20 * monitor.scaleFactor);
+    const x = settings.corner.endsWith('right') ? area.position.x + area.size.width - size.width - padding : area.position.x + padding;
+    const y = settings.corner.startsWith('bottom') ? area.position.y + area.size.height - size.height - padding : area.position.y + padding;
+    await win.setPosition(new PhysicalPosition(Math.max(area.position.x, x), Math.max(area.position.y, y)));
+  }
+  async function openConfiguration() { configure = true; providerDetail = null; settings.step = 1; await applyWindow(); }
+  async function finish() {
+    busy = true; error = '';
+    try {
+      settings = normalizeSettings({ ...settings, completed: true, step: 1 });
+      if (native) await invoke('set_preferences', { launchAtLogin: settings.launchAtLogin, notifications: settings.notifications });
+      await saveSettings(settings);
+      configure = false;
+      providerDetail = null;
+      await applyWindow();
+    } catch { error = 'Configuration could not be applied. Check app permissions and try again.'; }
+    finally { busy = false; }
+  }
+  async function refreshSystem() {
+    if (document.hidden || stop) return;
+    try {
+      snapshot = await systemSnapshot();
+      const network = selectedNetwork(snapshot, settings.interface);
+      if (network) {
+        if (historyInterface !== network.name) { history = []; historyInterface = network.name; }
+        history = [...history, { down: network.down, up: network.up }].slice(-30);
+      } else history = [];
+    } catch { snapshot = null; }
+  }
+  async function refreshProviders() {
+    if (document.hidden || stop) return;
+    try {
+      providers = await providerSnapshot();
+      drainTracker.observe(providers.usages, Date.now() / 1000);
+      const fresh = providers.attention.filter(a => !seenAlerts.has(a.id));
+      if (fresh.length && settings.notifications && native) await invoke('notify_attention', { surfaces: [...new Set(fresh.map(a => a.surface))] });
+      seenAlerts = new Set(providers.attention.map(a => a.id));
+    } catch { error = 'AI sources could not be refreshed. System monitoring can continue.'; }
+  }
+  async function connectCodex() {
+    busy = true; error = ''; notice = '';
+    try {
+      if (!native) { notice = 'Install Neon HUD to connect the local Codex CLI.'; return; }
+      settings.codexEnabled = true;
+      await saveSettings(settings);
+      notice = await invoke<string>('connect_codex');
+      await refreshProviders();
+    } catch { error = 'Codex could not connect. Install the Codex CLI, then try again. Existing login is reused through its supported app-server.'; }
+    finally { busy = false; }
+  }
+  async function connectClaude() {
+    busy = true; error = ''; notice = '';
+    try {
+      if (!native) { notice = 'Install Neon HUD to enable the Claude Code bridge.'; return; }
+      notice = await invoke<string>('install_claude_bridge');
+      await refreshProviders();
+    } catch { error = 'The Claude bridge could not be installed. Check access to Claude Code settings and retry.'; }
+    finally { busy = false; }
+  }
+  async function disconnectCodex() {
+    settings.codexEnabled = false;
+    await saveSettings(settings);
+    if (native) await invoke('disconnect_codex');
+    await refreshProviders();
+  }
+  async function removeClaudeBridge() {
+    if (!native) return;
+    try { notice = await invoke<string>('remove_claude_bridge'); await refreshProviders(); }
+    catch { error = 'The Claude bridge could not be removed. See the connection guide for recovery.'; }
+  }
+  async function toggleSize() { settings.size = settings.size === 'compact' ? 'expanded' : 'compact'; await applyWindow(); }
+  async function hide() { if (native) await getCurrentWindow().hide(); else notice = 'The desktop app hides to the system tray or menu bar.'; }
+  async function showProvider(surface: string) {
+    providerDetail = surface as Surface;
+    if (native && !configure) {
+      await getCurrentWindow().setSize(new LogicalSize(680, 440));
+    }
+  }
+  async function closeProvider() { providerDetail = null; await applyWindow(); }
+  onMount(() => {
+    const cleanups: (() => void)[] = [];
+    (async () => {
+      settings = await loadSettings();
+      configure = !settings.completed;
+      loaded = true;
+      if (native) {
+        monitors = (await availableMonitors()).map((m, i) => m.name || `Display ${i + 1}`);
+        cleanups.push(await listen('open-settings', openConfiguration));
+        cleanups.push(await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); await hide(); }));
+        if (settings.codexEnabled) invoke('connect_codex', { login: false }).catch(() => {});
+        await applyWindow();
+        await getCurrentWindow().show();
+      }
+      await refreshSystem(); await refreshProviders();
+    })().catch(() => { loaded = true; error = 'Some startup settings could not be loaded. You can continue configuring the HUD.'; });
+    const timer = setInterval(() => { if (!document.hidden) now = Date.now() / 1000; }, 1000);
+    const systemTimer = setInterval(refreshSystem, 2000);
+    const providerTimer = setInterval(refreshProviders, 5000);
+    const recover = setInterval(async () => {
+      if (!native || configure || document.hidden) return;
+      try {
+        const displays = await availableMonitors();
+        const win = getCurrentWindow();
+        const p = await win.outerPosition();
+        const visible = displays.some(m => p.x >= m.workArea.position.x && p.y >= m.workArea.position.y && p.x < m.workArea.position.x + m.workArea.size.width - 40 && p.y < m.workArea.position.y + m.workArea.size.height - 40);
+        if (!visible) await applyWindow();
+      } catch { /* A display may disappear during enumeration. Retry next interval. */ }
+    }, 15000);
+    const resume = () => { if (!document.hidden) { refreshSystem(); refreshProviders(); } };
+    document.addEventListener('visibilitychange', resume);
+    return () => { stop = true; clearTimeout(saveTimer); [timer, systemTimer, providerTimer, recover].forEach(clearInterval); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
+  });
+</script>
+
+<main data-theme={settings.theme} data-motion={settings.motion} class:reduced-motion={settings.reducedMotion} class:configuration={configure} style={`--panel-opacity:${settings.opacity};--text-scale:${settings.textScale}`}>
+  {#if !loaded}<div class="loading">Starting Neon HUD…</div>
+  {:else if configure}
+    <header class="setup-header" data-tauri-drag-region><div class="hud-brand"><span class="brand-mark">N</span><span>NEON <b>HUD</b></span></div><span class="setup-tag">PERSONAL COMMAND CENTER</span><button class="icon-button" aria-label="Hide configuration" onclick={hide}><Icon name="close"/></button></header>
+    <nav class="steps" aria-label="Configuration progress">
+      {#each ['Appearance', 'Connections', 'Preferences'] as label, index}<button class:active={settings.step === index + 1} aria-current={settings.step === index + 1 ? 'step' : undefined} onclick={() => settings.step = index + 1}><span>{index + 1}</span>{label}</button>{/each}
+    </nav>
+    {#key settings.step}<div class="setup-content">
+      {#if settings.step === 1}
+        <div class="page-intro"><span class="eyebrow">STEP 01 / YOUR SPACE</span><h1>Make your HUD yours<span>.</span></h1><p>A little cockpit for your machine and your AI. Choose the look, then connect your sources.</p></div>
+        <div class="appearance-layout"><div class="appearance-controls">
+          <fieldset class="theme-picker"><legend>Choose your atmosphere</legend>
+            {#each [{ id: 'circuit', name: 'Neon Circuit', caption: 'Cyan + mint. Sharp and focused.' }, { id: 'cyberpunk', name: 'Cyberpunk Night', caption: 'Violet + magenta. After hours.' }, { id: 'aurora', name: 'Aurora', caption: 'Mint + lavender. A softer glow.' }] as theme}
+              <button class="theme-option {theme.id}" class:selected={settings.theme === theme.id} aria-pressed={settings.theme === theme.id} onclick={() => settings.theme = theme.id as Settings['theme']}><span class="theme-swatches"><i></i><i></i><i></i></span><span><b>{theme.name}</b><small>{theme.caption}</small></span><span class="theme-check">{#if settings.theme === theme.id}<Icon name="check" size={16}/>{/if}</span></button>
+            {/each}
+          </fieldset>
+          <label for="motion">Motion<select id="motion" bind:value={settings.motion}><option value="chaotic">Chaotic · neon mischief</option><option value="playful">Playful · springy interactions</option><option value="quiet">Quiet · minimal motion</option></select></label><label for="size">Size<select id="size" bind:value={settings.size}><option value="compact">Floating · 360 × 210</option><option value="expanded">Expanded · 680 × 500</option></select></label><details class="advanced-settings"><summary>Placement & readability</summary><label for="corner">Position<select id="corner" bind:value={settings.corner}><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+          <label for="monitor">Display<select id="monitor" bind:value={settings.monitor}>{#each monitors as monitor, index}<option value={index}>{monitor}</option>{/each}</select></label>
+          <div class="form-grid"><label for="opacity">Panel opacity <b>{(settings.opacity * 100).toFixed(0)}%</b><input id="opacity" type="range" min="0.85" max="1" step="0.01" bind:value={settings.opacity}/></label><label for="text-scale">Text size <b>{(settings.textScale * 100).toFixed(0)}%</b><input id="text-scale" type="range" min="0.9" max="1.15" step="0.05" bind:value={settings.textScale}/></label></div>
+          <label class="toggle" for="always-top"><input id="always-top" type="checkbox" bind:checked={settings.alwaysOnTop}/><span>Keep HUD above other windows</span></label></details>
+        </div><div class="preview-area"><div class="preview-heading"><span>LIVE PREVIEW</span><span class="sample-pill">SAMPLE DATA</span></div><div class="preview-stage"><Hud settings={{...settings, size: 'compact'}} snapshot={sampleSystem} providers={previewProviders} {now} preview/></div><p class="preview-caption">The preview shows sample readings. Your real metrics appear after setup.</p><div class="preview-feature"><Icon name="cpu"/><span>System metrics stay on your device.</span></div><div class="preview-feature"><Icon name="question"/><span>AI icons signal when a connected session needs you.</span></div><button class="text-button demo-question" onclick={() => demoQuestion += 1}><Icon name="question" size={14}/> Test a sample question shake</button></div></div>
+      {:else if settings.step === 2}
+        <div class="page-intro"><span class="eyebrow">STEP 02 / YOUR SOURCES</span><h1>Connect your AI<span>.</span></h1><p>Your providers manage sign-in. Neon HUD receives supported usage readings, never your passwords.</p></div>
+        <div class="connection-grid">{#each ['chatgpt', 'codex', 'claude', 'claude-code'] as surface}
+          {@const usage = providers.usages.find(p => p.surface === surface)}
+          <article class="connection-card"><div class="connection-title"><Icon name={surface} size={26}/><h2>{surface === 'chatgpt' ? 'ChatGPT' : surface === 'codex' ? 'Codex' : surface === 'claude' ? 'Claude' : 'Claude Code'}</h2><span class="connection-state">{usage?.state === 'connected' ? 'Connected' : surface === 'chatgpt' ? 'Limited access' : 'Local source'}</span></div>
+            <p>{surface === 'chatgpt' ? 'Chat quotas are separate from Codex. No supported automatic chat quota source is available in this version.' : surface === 'codex' ? 'Read the account allowance through the official Codex app-server. Existing Codex sign-in can be reused.' : surface === 'claude' ? 'Claude and Claude Code share account limits when signed in to the same account. Readings come from the Code bridge.' : 'Add a local statusline and question observer. Existing settings are backed up and preserved.'}</p>
+            <div class="source-note">{usage?.message || 'Not connected'}{#if usage?.fetchedAt} · Updated {new Date(usage.fetchedAt * 1000).toLocaleTimeString()}{/if}</div>
+            <div class="connection-actions">{#if surface === 'codex'}<button class="secondary" disabled={busy} onclick={connectCodex}>Connect Codex</button>{#if settings.codexEnabled}<button class="text-button" onclick={disconnectCodex}>Disconnect</button>{/if}<button class="text-button" onclick={() => openLink('codex-install')}>Install CLI ↗</button>
+            {:else if surface === 'claude-code'}<button class="secondary" disabled={busy} onclick={connectClaude}>Enable bridge</button><button class="text-button" onclick={removeClaudeBridge}>Remove bridge</button><button class="text-button" onclick={() => openLink(surface)}>Install CLI ↗</button>
+            {:else}<button class="secondary" onclick={() => openLink(surface)}>Open provider ↗</button>{/if}</div>
+          </article>
+        {/each}</div><p class="connection-footnote">Optional connections. Claude readings become available after an assistant response. Question detection applies to connected Claude Code sessions; existing Codex desktop conversations are not automatically observed.</p>
+      {:else}
+        <div class="page-intro"><span class="eyebrow">STEP 03 / YOUR RHYTHM</span><h1>Keep it useful<span>.</span></h1><p>Pick what stays visible and when your HUD should get your attention.</p></div>
+        <div class="preferences-grid"><section class="preferences-panel"><h2>Visible metrics</h2>{#each [{key:'cpu',label:'CPU activity'},{key:'ram',label:'Memory usage'},{key:'network',label:'Network traffic'},{key:'ai',label:'AI allowance'}] as metric}<label class="toggle" for={`metric-${metric.key}`}><input id={`metric-${metric.key}`} type="checkbox" bind:checked={settings.metrics[metric.key as keyof Settings['metrics']]}/><Icon name={metric.key === 'ai' ? 'codex' : metric.key}/><span>{metric.label}</span></label>{/each}<label for="interface">Network interface<select id="interface" bind:value={settings.interface}><option value="auto">Automatic · default route</option>{#each snapshot?.networks || [] as network}<option value={network.name}>{network.name}</option>{/each}</select></label><p class="field-hint">One interface at a time avoids counting VPN traffic twice. System readings refresh every two seconds.</p></section>
+        <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section></div>
+      {/if}
+      {#if error}<div class="feedback error" role="alert">{error}</div>{/if}
+      {#if notice}<div class="feedback" role="status">{notice}</div>{/if}
+    </div>{/key}
+    <footer class="setup-footer"><span>LOCAL FIRST <i>·</i> SMALL BY DESIGN</span><div>{#if settings.step > 1}<button class="secondary" onclick={() => settings.step -= 1}>Back</button>{/if}{#if settings.completed}<button class="text-button" onclick={finish}>Return to HUD</button>{/if}{#if settings.step < 3}<button class="primary" onclick={() => settings.step += 1}>{settings.step === 1 ? 'Next: Connect sources' : 'Next: Preferences'}<Icon name="arrow" size={17}/></button>{:else}<button class="primary" disabled={busy} onclick={finish}>Open my HUD<Icon name="arrow" size={17}/></button>{/if}</div></footer>
+  {:else if providerDetail}
+    <section class="provider-dialog"><header><h1>{providerDetail === 'codex' ? 'ChatGPT & Codex' : 'Claude'} usage</h1><button class="icon-button" aria-label="Close usage details" onclick={closeProvider}><Icon name="close"/></button></header>
+      {#each providers.usages.filter(u => providerDetail === 'codex' ? ['chatgpt','codex'].includes(u.surface) : ['claude','claude-code'].includes(u.surface)) as usage}<article><h2>{usage.surface === 'chatgpt' ? 'ChatGPT chat' : usage.surface === 'codex' ? 'Codex account' : usage.surface === 'claude' ? 'Claude shared account' : 'Claude Code bridge'}</h2><p>{usage.message}</p>{#each usage.windows as quota}<div class="quota-line"><span>{quota.label}</span><div class="meter"><span style={`width:${remaining(quota.usedPercent)}%`}></span></div><b>{remaining(quota.usedPercent).toFixed(0)}% left</b><small>{countdown(quota.resetsAt,now)} · {windowStatus(quota,usage.fetchedAt,now)}</small></div><p class="drain-detail">{drainText(drainTracker.reading(usage, quota, now))} · time-weighted average, up to 30 min</p>{/each}{#if usage.tokenUsage}{@const tokenRate = drainTracker.tokenReading(usage, now)}<p class="token-reading">{usage.tokenUsage.total.toLocaleString()} reported tokens this session · {tokenRate ? `${tokenRate.perMinute.toFixed(0)} tokens/min average over ${(tokenRate.observedSeconds / 60).toFixed(0)} min${tokenRate.fast ? " · Fast token drain" : ""}` : "Collecting ≥2 min of token readings"}</p>{/if}<small class="source-note">Source: {usage.source} · {usage.fetchedAt ? `Last reading ${new Date(usage.fetchedAt * 1000).toLocaleString()}` : 'No reading'}</small></article>{/each}
+      {#each providers.attention.filter(a => providerDetail === 'codex' ? a.surface === 'codex' : a.surface === 'claude-code' || a.surface === 'claude') as attention}<div class="feedback"><Icon name="question"/> {attention.reason} · Return to your {attention.surface} session to answer. <button class="text-button" onclick={async () => { if (native) await invoke('dismiss_attention', { id: attention.id }); await refreshProviders(); }}>Dismiss badge</button></div>{/each}
+      <button class="secondary" onclick={() => openLink(providerDetail || 'chatgpt')}>Open provider usage ↗</button>
+      {#if error}<div class="feedback error" role="alert">{error}</div>{/if}
+    </section>
+  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}><Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider}/></div>{/if}
+</main>

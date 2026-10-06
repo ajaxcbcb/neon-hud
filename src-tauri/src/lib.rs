@@ -472,7 +472,7 @@ pub fn run() {
                         .clone(),
                 )
                 .menu(&menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
                         if let Some(state) = app.try_state::<Mutex<codex::CodexState>>() {
@@ -498,6 +498,12 @@ pub fn run() {
                 let _ = win.show();
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             load_settings,

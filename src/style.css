@@ -37,3 +37,5 @@ main[data-motion=chaotic]:not(.reduced-motion) .theme-option.selected .theme-swa
 @keyframes brand-bounce{0%,86%,100%{transform:none}90%{transform:rotate(-12deg) translateY(-2px)}94%{transform:rotate(9deg)}}
 main[data-motion=quiet] *,main.reduced-motion *{animation:none!important;transition:none!important}
 @media(prefers-reduced-motion:reduce){main *,main *::before,main *::after{animation:none!important;transition:none!important}}
+
+main.configuration{height:100dvh;min-height:0}.configuration .setup-content{min-height:0;overflow-y:auto}.setup-header,.steps,.setup-footer{flex-shrink:0}
