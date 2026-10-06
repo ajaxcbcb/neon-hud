@@ -4,9 +4,9 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: Implementation and platform packaging verified; Windows installed and first-run Appearance inspected. Public preview publication is the final delivery step. Delivery priority is P2 (no deadline specified).
+Status: Complete. Public v0.1.0 preview published; Windows installed and first-run Appearance inspected. Delivery priority is P2 (no deadline specified).
 
-Next: Publish both verified prerelease installers and SHA256SUMS.txt, then verify the public release assets.
+Next: None for this delivery. Platform/account evidence limits are recorded in VALIDATION.md.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@ Next: Publish both verified prerelease installers and SHA256SUMS.txt, then verif
 | Source integration | Coordinator | Startup repair | Repository write | Complete; dedicated monitor thread and launch regression |
 | Native tests and installers | GitHub CI | Source integration | Cloud | Complete; 18 tests each platform, both installers, Windows launch |
 | Windows installation | Coordinator | Verified Windows installer | Local installer | Complete; installer exit 0, visible Appearance window and inspected capture |
-| Public preview | Coordinator | Verified installers | Release write | Waiting; release assets, hashes and validation evidence |
+| Public preview | Coordinator | Verified installers | Release write | Complete; public v0.1.0 release, both assets, matching hashes and validation evidence |
 
 Local native compilation is not reserved. Installation and release writes run sequentially; runtime estimates are unknown.
 

@@ -19,7 +19,9 @@ Release installer SHA-256:
 
 | Asset | SHA-256 |
 |---|---|
-| `Neon HUD_0.1.0_x64-setup.exe` | `4667f56d4a3099ffd0ec6519057b0578dff73090262c0fcf93bc618a05cb1124` |
-| `Neon HUD_0.1.0_universal.dmg` | `b6cab438d22d546b74c7ca0230daf12503b1a33d2443aaa7f15ea65c16a334c1` |
+| `Neon.HUD_0.1.0_x64-setup.exe` | `4667f56d4a3099ffd0ec6519057b0578dff73090262c0fcf93bc618a05cb1124` |
+| `Neon.HUD_0.1.0_universal.dmg` | `b6cab438d22d546b74c7ca0230daf12503b1a33d2443aaa7f15ea65c16a334c1` |
+
+The [public v0.1.0 prerelease](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0) includes both assets and SHA256SUMS.txt. GitHub-reported installer digests match the downloaded CI assets. GitHub converts spaces in uploaded asset names to periods; the checksum file uses those published names.
 
 Live provider accounts, native Mac installation, signing/notarization, and full-process idle CPU/memory targets require separate platform evidence. A successful compile or screenshot is not proof of those checks.
