@@ -51,6 +51,10 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+      - name: Verify Windows application launch
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/windows-launch-smoke.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

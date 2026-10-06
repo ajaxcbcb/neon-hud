@@ -6,6 +6,7 @@ use std::{
     collections::HashMap,
     fs,
     sync::atomic::{AtomicU64, Ordering},
+    sync::mpsc::{self, Sender, SyncSender},
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -326,6 +327,19 @@ mod settings_tests {
             Duration::from_secs(60)
         );
     }
+    #[test]
+    fn background_monitor_keeps_sampling_across_resource_modes() {
+        let monitor = SystemMonitor::new();
+        let first = monitor.snapshot(ResourceMode::Normal).unwrap();
+        assert!(first.memory.total > 0);
+        assert!(first.cpu.is_none());
+        let next = monitor.snapshot(ResourceMode::Critical).unwrap();
+        assert!(next.sampled_at >= first.sampled_at);
+        assert!(next
+            .cpu
+            .is_some_and(|usage| usage.is_finite() && (0.0..=100.0).contains(&usage)));
+        assert!(!next.cores.is_empty());
+    }
 }
 
 #[derive(Serialize)]
@@ -558,15 +572,47 @@ impl SystemState {
         }
     }
 }
+#[derive(Clone)]
+struct SystemMonitor {
+    requests: SyncSender<(ResourceMode, Sender<SystemSnapshot>)>,
+}
+impl SystemMonitor {
+    fn new() -> Self {
+        let (requests, receiver) = mpsc::sync_channel::<(ResourceMode, Sender<SystemSnapshot>)>(1);
+        std::thread::Builder::new()
+            .name("neon-hud-monitor".into())
+            .spawn(move || {
+                // Windows temperature sensors initialize MTA COM. Keep their creation,
+                // refresh and destruction on this thread, away from the STA UI thread.
+                let mut state = None;
+                while let Ok((mode, response)) = receiver.recv() {
+                    let snapshot = state.get_or_insert_with(SystemState::new).snapshot(mode);
+                    let _ = response.send(snapshot);
+                }
+            })
+            .expect("Could not start system monitor");
+        Self { requests }
+    }
+    fn snapshot(&self, mode: ResourceMode) -> Result<SystemSnapshot, String> {
+        let (response, receiver) = mpsc::channel();
+        self.requests
+            .try_send((mode, response))
+            .map_err(|error| format!("System monitor unavailable or busy: {error}"))?;
+        receiver
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(|error| format!("System monitor did not respond: {error}"))
+    }
+}
 #[tauri::command]
-fn system_snapshot(
-    state: tauri::State<'_, Mutex<SystemState>>,
+async fn system_snapshot(
+    app: AppHandle,
     resource_mode: Option<String>,
 ) -> Result<SystemSnapshot, String> {
-    Ok(state
-        .lock()
-        .map_err(|e| e.to_string())?
-        .snapshot(ResourceMode::parse(resource_mode.as_deref())))
+    let monitor = app.state::<SystemMonitor>().inner().clone();
+    let mode = ResourceMode::parse(resource_mode.as_deref());
+    tauri::async_runtime::spawn_blocking(move || monitor.snapshot(mode))
+        .await
+        .map_err(|error| format!("System monitor task failed: {error}"))?
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -726,7 +772,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_notification::init())
-        .manage(Mutex::new(SystemState::new()))
+        .manage(SystemMonitor::new())
         .manage(Mutex::new(codex::CodexState::default()))
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Show HUD", true, None::<&str>)?;

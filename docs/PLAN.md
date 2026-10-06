@@ -4,16 +4,16 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: Frontend verified; final bridge recovery repair in progress. Delivery priority is P2 (no deadline specified).
+Status: Frontend and native builds verified. Windows installation exposed a COM startup conflict; repair and launch regression are ready for CI. Delivery priority is P2 (no deadline specified).
 
-Next: Verify the bridge repair, push source, run native CI tests/packaging, install and launch Windows, then publish the prerelease assets and hashes.
+Next: Verify the background monitor and Windows launch in CI, install the corrected Windows build, verify first-run Appearance, then publish both prerelease installers and hashes.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
-| Bridge recovery repair | Backend worker | Focused review | Light local | Running; regression and formatting |
-| Source integration | Coordinator | Bridge repair | Repository write | Waiting; clean diff and public push |
-| Native tests and installers | GitHub CI | Source integration | Cloud | Waiting; Windows and Mac jobs pass |
-| Windows installation | Coordinator | Verified Windows installer | Local installer | Waiting; installer exit, installed executable and visible app |
+| Bridge recovery repair | Backend worker | Focused review | Light local | Complete; regression passed on Windows and Mac |
+| Source integration | Coordinator | Startup repair | Repository write | Ready; dedicated monitor thread and launch regression |
+| Native tests and installers | GitHub CI | Source integration | Cloud | Next; Windows and Mac jobs plus Windows launch pass |
+| Windows installation | Coordinator | Verified Windows installer | Local installer | Repair required; first installer completed but startup exited |
 | Public preview | Coordinator | Verified installers | Release write | Waiting; release assets, hashes and validation evidence |
 
 Local native compilation is not reserved. Installation and release writes run sequentially; runtime estimates are unknown.
