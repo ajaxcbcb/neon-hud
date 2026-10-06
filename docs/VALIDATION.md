@@ -9,8 +9,17 @@ Checked on 7 October 2026.
 - The compact 360 × 240 layout also passed with two drives, critical mode and pressure badges after 16.5 seconds of high-load fixture readings.
 - Unit coverage includes sustained pressure, stale/unknown readings, slower sampling, recovery hysteresis, storage-only warnings and gradient direction/clamping.
 - Appearance screenshot was inspected at desktop size. Its preview is labeled **SAMPLE DATA**. Browser fixtures exercise frontend behavior; they do not prove native sensors or account integration.
-- Rust formatting passed. Local Rust execution is blocked by missing MSVC `link.exe`; native test and installer evidence will be recorded from the final GitHub CI run.
+- Rust formatting passed. Native builds ran in GitHub CI because local MSVC `link.exe` was unavailable.
+- [Final native CI run](https://github.com/ajaxcbcb/neon-hud/actions/runs/37535203987), source `f329d87822bd6398164077a1300ed6cfd44ea905`: all 18 Rust tests passed on Windows and Mac, including real background sensor collection across resource modes. Windows x64 NSIS and universal Mac DMG packaging passed; frontend verification and audit also passed in that run.
+- Windows CI launch smoke passed: the executable created a visible Neon HUD window and remained running for another 10 seconds.
 
-Windows installation and launch evidence will be added after verified CI packaging.
+Windows x64 setup was installed successfully (installer exit 0), then the installed 0.1.0 executable launched and stayed running. UI Automation confirmed Step 1, Appearance, the three themes and the labeled sample preview. A capture of the installed app window was inspected. Login startup remained off. This replaced an earlier build that exposed a Windows `RPC_E_CHANGED_MODE` startup panic; sensor construction/refresh/destruction now stay on one background thread rather than the UI thread.
+
+Release installer SHA-256:
+
+| Asset | SHA-256 |
+|---|---|
+| `Neon HUD_0.1.0_x64-setup.exe` | `4667f56d4a3099ffd0ec6519057b0578dff73090262c0fcf93bc618a05cb1124` |
+| `Neon HUD_0.1.0_universal.dmg` | `b6cab438d22d546b74c7ca0230daf12503b1a33d2443aaa7f15ea65c16a334c1` |
 
 Live provider accounts, native Mac installation, signing/notarization, and full-process idle CPU/memory targets require separate platform evidence. A successful compile or screenshot is not proof of those checks.

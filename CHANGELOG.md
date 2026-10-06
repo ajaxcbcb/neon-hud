@@ -32,6 +32,7 @@ First public preview.
 ### Reliability and efficiency
 
 - Non-overlapping polling, hidden-window pause, expensive-sensor caches and capped particles.
+- Dedicated background sensor thread keeps Windows WMI/COM initialization away from the UI; CI checks window creation and startup survival.
 - Compact Claude index avoids parsing all historical sessions on every poll.
 - Locked concurrent bridge writes preserve quota and unresolved attention updates.
 - Precise bridge-command ownership and fresh backups preserve unrelated Claude configuration.
