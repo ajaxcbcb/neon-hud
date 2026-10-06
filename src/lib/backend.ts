@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { Settings, SystemSnapshot, ProviderSnapshot } from './model';
+import type { ResourceMode } from './resources';
 import { defaults, normalizeSettings } from './model';
 
 export const native = isTauri();
@@ -12,8 +13,8 @@ export async function saveSettings(settings: Settings): Promise<void> {
   if (native) return invoke('save_settings', { settings });
   localStorage.setItem('neon-hud-settings', JSON.stringify(settings));
 }
-export async function systemSnapshot(): Promise<SystemSnapshot | null> {
-  return native ? invoke('system_snapshot') : null;
+export async function systemSnapshot(resourceMode: ResourceMode = 'normal'): Promise<SystemSnapshot | null> {
+  return native ? invoke('system_snapshot', { resourceMode }) : null;
 }
 export async function providerSnapshot(): Promise<ProviderSnapshot> {
   if (native) return invoke('provider_snapshot');

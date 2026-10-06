@@ -22,8 +22,8 @@ main:not([data-motion=quiet]):not(.reduced-motion) .connection-card{animation:pa
 main[data-motion=chaotic]:not(.reduced-motion) .metric-label .metric-icon{animation:icon-mischief 9s ease-in-out infinite}
 main[data-motion=chaotic]:not(.reduced-motion) .metric-label .metric-icon[data-icon=ram]{animation-delay:-3s}
 main[data-motion=chaotic]:not(.reduced-motion) .metric-label .metric-icon[data-icon=network]{animation-delay:-6s}
-main[data-motion=chaotic]:not(.reduced-motion) .ai-title>.metric-icon{animation:orbital-wiggle 11s ease-in-out infinite}
-main[data-motion=chaotic]:not(.reduced-motion) .ai-module:nth-child(2) .ai-title>.metric-icon{animation-delay:-5s}
+main[data-motion=chaotic]:not(.reduced-motion) .ai-title>span:first-child>.metric-icon{animation:orbital-wiggle 11s ease-in-out infinite}
+main[data-motion=chaotic]:not(.reduced-motion) .ai-module:nth-child(2) .ai-title>span:first-child>.metric-icon{animation-delay:-5s}
 main[data-motion=chaotic]:not(.reduced-motion) .brand-mark{animation:brand-bounce 13s ease-in-out infinite}
 main[data-motion=chaotic]:not(.reduced-motion) .primary:hover{transform:translateY(-2px) rotate(-1deg);box-shadow:0 0 24px var(--glow)}
 main[data-motion=chaotic]:not(.reduced-motion) .icon-button:hover .metric-icon[data-icon=settings]{transform:rotate(135deg)}

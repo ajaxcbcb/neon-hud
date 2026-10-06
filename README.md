@@ -1,20 +1,26 @@
 # Neon HUD
 
-A small desktop cockpit for CPU, memory, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
+A small desktop cockpit for CPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
+
+[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.0.md)
+
+![Appearance setup with clearly labeled sample readings](docs/assets/appearance.png)
 
 ## Install and first launch
 
-Preview installers are built by [GitHub Actions](https://github.com/ajaxcbcb/neon-hud/actions). Windows: download the x64 NSIS setup executable and follow the installer. Mac: open the universal DMG and drag Neon HUD to Applications. Preview builds are unsigned; signed production distribution requires platform certificates and Mac notarization.
+Get preview installers from [GitHub Releases](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0). Packages are built by [GitHub Actions](https://github.com/ajaxcbcb/neon-hud/actions). Windows: download the x64 NSIS setup executable and follow the installer. Mac: open the universal DMG and drag Neon HUD to Applications. Preview builds are unsigned; signed production distribution requires platform certificates and Mac notarization.
 
-The first page after installation is **Appearance**: choose Neon Circuit, Cyberpunk Night or Aurora, choose Chaotic, Playful or Quiet motion, then size. The default floating HUD is 360 by 210 pixels; placement and readability controls are tucked into an expandable section. A clearly marked sample HUD previews your choices. Next connect optional AI sources, then choose metrics and alerts. System monitoring works without an AI connection.
+The first page after installation is **Appearance**: choose Neon Circuit, Cyberpunk Night or Aurora, choose Chaotic, Playful or Quiet motion, then size. The default floating HUD is 360 by 240 pixels with storage, or 360 by 210 with storage hidden; placement and readability controls are tucked into an expandable section. A clearly marked sample HUD previews your choices. Next connect optional AI sources, then choose metrics and alerts. System monitoring works without an AI connection.
 
-Open the gear or tray/menu-bar **Configure** item to change settings later. **Preferences → Launch Neon HUD at login** enables Windows startup or a macOS login agent; switching it off removes that registration. It defaults to off. Closing the HUD hides it to the tray; use **Quit** to exit.
+Hover or focus any metric for numerical details and pressure explanations. Right-click the HUD (or press Shift+F10) for expand, pause/resume, pin, theme, motion, refresh, settings and hide controls. Open the gear or tray/menu-bar **Configure** item to change settings later. **Preferences → Launch Neon HUD at login** enables Windows startup or a macOS login agent; switching it off removes that registration. It defaults to off. Closing the HUD hides it to the tray; use **Quit** to exit.
 
 ## Measurements
 
 - CPU: total utilization, per-core bars and reported frequency. Temperatures appear only when supported by the machine.
 - RAM: used/total GiB and utilization percentage.
 - Network: download/upload MiB/s, 60-second bars and interface transfer totals. Automatic selection uses one default-route interface, avoiding aggregate VPN double counting. Select another interface if the route cannot be determined.
+- Storage: mounted-volume capacity percentage and used/free/total GiB. Select drives in Preferences or include all detected drives automatically. Disconnected selections remain in settings until forgotten.
+- Stress: green → amber → hot pink gradients on gauges and bars. AI allowance reverses the scale as remaining allowance falls. Numerical readings and **!** badges accompany colors. CPU/RAM badges require 10 seconds of sustained pressure; high reported temperature and low free space warn immediately. Thresholds are configurable; thermal throttling is not measured. Network colors show recent relative activity, not link capacity or proof of congestion.
 - AI: percentage remaining, provider-reported windows and reset times. A five-hour window appears only if the provider reports one. Weekly and other windows remain separate. Missing data is unavailable; old data is marked stale; expired timers await a refresh.
 - Drain: a time-weighted average of allowance consumption over up to 30 minutes, requiring at least two minutes of fresh readings. Shows percentage/hour and estimated time to exhaustion. **Fast drain** means exhaustion is projected before the reported reset. This estimate assumes the same pace; it is not a provider guarantee. Cached snapshots do not count as new measurements; resets restart the observation. Allowance percentage is not a token count.
 
@@ -30,7 +36,17 @@ The Claude bridge backs up settings, preserves other hooks and chains an existin
 
 ## Privacy and performance
 
-Settings and minimal readings stay in per-user application data. No telemetry, passwords, API keys or conversation content are collected. Provider authentication stays with the installed provider CLI. The interface uses bundled assets and system fonts, no charting framework. Chaotic mode adds staggered transform animations to small icons; Playful uses interaction motion and Quiet disables motion. System reduced-motion preferences override all modes. System polling is every two seconds; Codex quota polling is slower. Hidden UI polling pauses.
+Settings and minimal readings stay in per-user application data. No telemetry, passwords, API keys or conversation content are collected. Provider authentication stays with the installed provider CLI. The interface uses bundled Latin fonts, SVG gauges and CSS bars. Anime.js adds short interaction bursts capped at 24 particles, removed after completion. Chaotic mode adds staggered transform animations to small icons; Playful uses interaction motion and Quiet disables motion. System reduced-motion preferences override all modes.
+
+Smart resource mode is on by default. Sustained CPU/RAM pressure or high reported temperature slows checks and quiets motion without changing your saved motion choice. The AUTO chip and expanded resource strategy show the reason and suggested actions. Hidden UI polling pauses; manual refresh remains available while paused. The app adjusts its own budget; it does not close other apps or change OS power settings.
+
+| Resource mode | System checks | AI checks | Drive cache | Route cache | CPU clock cache |
+| --- | --- | --- | --- | --- | --- |
+| Normal | 2s | 5s | 30s | 30s | 15s |
+| Pressure | 4s | 10s | 90s | 60s | 30s |
+| Critical | 8s | 15s | 180s | 120s | 60s |
+
+Critical mode starts after sustained ≥98% CPU or ≥97% memory (subject to higher configured thresholds), or a sensor ≥10°C above its configured threshold. Recovery needs 20 seconds of fresh readings comfortably below thresholds per step. Missing/stale readings cannot prove recovery. Turn adaptation off in Preferences for the normal budget. Provider refresh cadence may be slower than UI checks; cached readings are not relabeled as new.
 
 Performance targets are under 1% idle CPU and a small full-process memory footprint. These are targets until measured on each platform, including WebView and provider helper processes. See [validation](docs/VALIDATION.md) for evidence and limitations.
 

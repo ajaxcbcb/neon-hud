@@ -11,6 +11,10 @@
     <rect x="2" y="6" width="20" height="11" rx="2"/><path d="M6 10v3m4-3v3m4-3v3m4-3v3M6 17v3m4-3v3m4-3v3m4-3v3"/>
   {:else if name === 'network'}
     <path d="M7 3v16m-4-4 4 4 4-4M17 21V5m-4 4 4-4 4 4"/>
+  {:else if name === 'storage'}
+    <path d="m5 3-3 11v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5L19 3Z"/><path d="M2 14h20"/><circle cx="17" cy="17.5" r=".6" fill="currentColor"/><path d="M6 17.5h4"/>
+  {:else if name === 'pause'}<path d="M8 4v16m8-16v16"/>
+  {:else if name === 'pin'}<path d="m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8"/>
   {:else if name === 'claude' || name === 'claude-code'}
     <image href="/brands/claude.svg" width="24" height="24"/>
   {:else if name === 'chatgpt' || name === 'codex'}
@@ -22,5 +26,8 @@
   {:else if name === 'check'}<path d="m5 12 4 4L19 6"/>
   {:else if name === 'arrow'}<path d="M4 12h16m-6-6 6 6-6 6"/>
   {:else if name === 'question'}<path d="M9 8a3 3 0 0 1 6 0c0 2-3 2-3 5"/><circle cx="12" cy="17" r=".5"/><circle cx="12" cy="12" r="10"/>
+  {:else if name === 'star'}<path d="m12 2 2.5 6.5 7 1-5.2 4.7 1.5 7-5.8-3.8-5.8 3.8 1.5-7L2.5 9.5l7-1Z"/>
+  {:else if name === 'orbit'}<circle cx="12" cy="12" r="5"/><ellipse cx="12" cy="12" rx="11" ry="4" transform="rotate(-30 12 12)"/><circle cx="20" cy="7" r="1" fill="currentColor"/>
+  {:else if name === 'spark'}<path d="m12 1 2.2 7.5L22 6l-4.5 6L23 16l-8-1.2L12 23l-2.5-8L2 18l4.5-6L1 7l8.2 1.5Z"/>
   {/if}
 </svg>
