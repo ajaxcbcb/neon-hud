@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+.toolchain/
+output/
+.playwright-cli/
+*.log
+.env*
+.DS_Store
