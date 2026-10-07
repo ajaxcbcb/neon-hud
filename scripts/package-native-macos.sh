@@ -13,7 +13,7 @@ if [[ ! -f "$binary" ]]; then
   exit 1
 fi
 
-version="$(cargo metadata --no-deps --format-version 1 --manifest-path src-native/Cargo.toml | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "neon-hud-native"))')"
+version="$(cargo metadata --locked --no-deps --format-version 1 --manifest-path src-native/Cargo.toml | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "neon-hud-native"))')"
 short_version="${version%%-*}"
 app="$out/Neon HUD Native.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"

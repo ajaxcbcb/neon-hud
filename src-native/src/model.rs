@@ -252,9 +252,15 @@ mod tests {
         let mut duplicates = screens.clone();
         duplicates[1].name = "Main".into();
         let saved = remember_position([-3440., 100.], [320., 112.], &duplicates).unwrap();
-        assert_eq!(restore_position(&saved, &duplicates, [160., 56.]), Some([-3440., 100.]));
+        assert_eq!(
+            restore_position(&saved, &duplicates, [160., 56.]),
+            Some([-3440., 100.])
+        );
         let legacy = json!({"x":10.,"y":20.,"monitor":"Main"});
-        assert_eq!(restore_position(&legacy, &screens, [160., 56.]), Some([10., 20.]));
+        assert_eq!(
+            restore_position(&legacy, &screens, [160., 56.]),
+            Some([10., 20.])
+        );
     }
     fn usage(at: f64, used: f64, reset: f64) -> Value {
         json!({"surface":"codex","state":"connected","fetchedAt":at,"windows":[{"label":"5 hours","minutes":300,"usedPercent":used,"resetsAt":reset}]})

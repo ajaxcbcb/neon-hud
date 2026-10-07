@@ -37,8 +37,12 @@ impl NativeBackend {
     }
 
     pub fn load_profile(&self) -> Result<Value, String> {
-        serde_json::to_value(read_settings(&self.config_dir.join("settings.json"))?)
-            .map_err(|e| e.to_string())
+        let path = self.config_dir.join("settings.json");
+        let mut value = serde_json::to_value(read_settings(&path)?).map_err(|e| e.to_string())?;
+        if !path.exists() {
+            value["size"] = Value::String("compressed".into());
+        }
+        Ok(value)
     }
 
     pub fn save_profile(&self, value: Value) -> Result<(), String> {
@@ -116,6 +120,7 @@ mod tests {
         ));
         let mut backend = NativeBackend::new(dir.clone()).unwrap();
         let mut profile = backend.load_profile().unwrap();
+        assert_eq!(profile["size"], "compressed");
         profile["theme"] = Value::String("aurora".into());
         backend.save_profile(profile).unwrap();
         assert_eq!(backend.load_profile().unwrap()["theme"], "aurora");

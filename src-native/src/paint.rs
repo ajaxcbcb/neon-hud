@@ -91,8 +91,8 @@ pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, p: Palette) {
             p.panel
         };
         ui.painter().line_segment(
-            [c + Vec2::angled(a) * 38., c + Vec2::angled(a) * 45.],
-            Stroke::new(3., color),
+            [c + Vec2::angled(a) * 38.0_f32, c + Vec2::angled(a) * 45.0_f32],
+            Stroke::new(3.0_f32, color),
         );
     }
     ui.painter().text(
@@ -113,7 +113,7 @@ pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, p: Palette) {
 pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f32) {
     let s = size / 16.;
     let pt = |x: f32, y: f32| c + Vec2::new(x * s, y * s);
-    let stroke = Stroke::new(1.6, color);
+    let stroke = Stroke::new(1.6_f32, color);
     let line = |a: (f32, f32), b: (f32, f32)| {
         painter.line_segment([pt(a.0, a.1), pt(b.0, b.1)], stroke);
     };
@@ -181,7 +181,7 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
                     let b = a + j as f32 * std::f32::consts::TAU / 6.;
                     pts.push(center + Vec2::angled(b) * 4.7 * s);
                 }
-                painter.add(egui::Shape::line(pts, Stroke::new(1.1, color)));
+                painter.add(egui::Shape::line(pts, Stroke::new(1.1_f32, color)));
             }
         }
         _ => {

@@ -506,7 +506,7 @@ impl App {
                 ui.painter().rect_stroke(
                     r,
                     26,
-                    egui::Stroke::new(1., p.accent.gamma_multiply(0.55)),
+                    egui::Stroke::new(1.0_f32, p.accent.gamma_multiply(0.55)),
                     egui::StrokeKind::Inside,
                 );
                 let grip = Rect::from_min_size(r.min + Vec2::new(3., 7.), Vec2::new(16., 38.));

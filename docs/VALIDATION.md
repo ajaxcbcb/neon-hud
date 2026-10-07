@@ -8,7 +8,15 @@ Checked on 7 October 2026.
 - Independent source review passed after repairing preset-dependent popover movement, ambiguous identical-monitor restoration and hover resizing during native dragging.
 - [Final CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37583511703), source `1a16805dcc802fac32f1d60a3e417418879e3c16`, passed frontend checks/tests/build with zero Svelte errors/warnings and zero audit vulnerabilities, Rust formatting, 30 Windows and 27 Mac tests, both signed platform packages and Windows launch/minimize-to-tray.
 - The [public v0.1.4 preview](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.4) contains all five exact-run artifacts and SHA256SUMS.txt. All six public asset digests match locally, and both updater payload signatures and trusted comments verify against the existing public key. Windows setup SHA-256: `d4a56f3dcba5f66cb6fb6c25d0a9bdd2192189f1c1bd648278ddd60d736fe7ae`.
-- Local upgrade and dragging/compressed appearance/restart persistence await fresh resource admission. The earlier reservation expired before any shutdown, install or input. Renewed central CPU samples were 66% and 99%, so admission was held. Installed v0.1.3 and existing profiles are preserved; the updater manifest still targets 0.1.3. No new installed runtime or single-process proof is claimed.
+- Windows v0.1.4 was installed after a renewed runtime reservation. The previous GUI and all eight observed descendants exited through the normal message loop; the verified installer returned 0. The installed executable reports 0.1.4, and the original profile bytes were preserved during installation.
+- The own installed HUD compressed from 280 × 56 to 160 × 56 and returned to regular size. Non-layout preferences and the Claude configuration hash stayed unchanged. Dragging, keyboard nudging and restart placement were inconclusive because the human was concurrently moving/resizing the HUD; automated input stopped after that was confirmed. No restart-persistence proof is claimed for 0.1.4.
+- The installed snapshot had nine owned processes: GUI, six WebView2 helpers, Codex and its console host. Strict single-process operation remains open. The automatic-update manifest still targets 0.1.3 while replacement gates remain unfinished.
+
+## 0.2.0 native desktop source
+
+- The native preview uses Rust/egui/glow and the headless Rust monitoring core. Source contains no scroll areas or HTML/CSS/JavaScript renderer. Settings, details and hover readings have separate bounded native windows.
+- Preview settings are copied once into a separate directory; Claude bridge data stays in the shared parent directory. Tests cover original-profile retention and bridge-directory routing. Native startup uses a distinct opt-in registration.
+- Windows/macOS cloud tests, dependency closure, packaging and actual Windows screenshot capture are in progress. No local native build, installation or runtime check has run. Existing Codex/Claude helpers and signed native updates remain unfinished gates.
 
 ## 0.1.3 quiet updates and retained profiles
 
