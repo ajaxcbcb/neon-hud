@@ -31,7 +31,7 @@ jobs:
             artifact: windows-x64-unsigned-preview
           - os: macos-latest
             target: universal-apple-darwin
-            bundle: dmg
+            bundle: app,dmg
             artifact: mac-universal-unsigned-preview
     runs-on: ${{ matrix.os }}
     steps:
@@ -63,6 +63,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/windows-launch-smoke.ps1
+      - name: Verify signed update payloads
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          $bundleRoot = 'src-tauri/target/${{ matrix.target }}/release/bundle'
+          $suffix = if ('${{ runner.os }}' -eq 'Windows') { '.exe' } else { '.app.tar.gz' }
+          $payloads = @(Get-ChildItem -LiteralPath $bundleRoot -Recurse -File | Where-Object { $_.Name.EndsWith($suffix) })
+          if ($payloads.Count -ne 1) { throw "Expected one update payload ending in $suffix; found $($payloads.Count)" }
+          if (-not (Test-Path -LiteralPath ($payloads[0].FullName + '.sig'))) { throw 'Update signature is missing' }
+          Write-Output "Signed update payload present: $($payloads[0].Name)"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
