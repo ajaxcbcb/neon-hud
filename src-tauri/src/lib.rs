@@ -446,7 +446,7 @@ mod settings_tests {
         assert!(first.cpu.is_none());
         let cached = monitor.snapshot(ResourceMode::Normal, 250).unwrap();
         assert_eq!(cached.sampled_at, first.sampled_at);
-        thread::sleep(Duration::from_millis(275));
+        std::thread::sleep(Duration::from_millis(275));
         let next = monitor.snapshot(ResourceMode::Normal, 250).unwrap();
         assert!(next.sampled_at >= first.sampled_at);
         assert!(next
