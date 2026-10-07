@@ -4,9 +4,9 @@ A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic a
 
 ## Native Rust desktop preview
 
-[Native downloads](https://github.com/ajaxcbcb/neon-hud/releases) · [Controls and profile](src-native/README.md) · [Nook release notes](docs/releases/v0.2.0-alpha.5.md) · [Validation](docs/VALIDATION.md)
+[Native downloads](https://github.com/ajaxcbcb/neon-hud/releases) · [Controls and profile](src-native/README.md) · [Nook release notes](docs/releases/v0.2.0-alpha.6.md) · [Validation](docs/VALIDATION.md)
 
-Rust/egui/glow draws the floating HUD and custom neon frame directly. The new **Nook** presentation opens from a 240 × 40 capsule into a shallow panel of music, calendar, notes, timer, tasks and quick actions. Nook/Tray navigation and a numerical CPU/GPU/RAM/network/drives/Codex/Claude rail keep your tools and measurements together. Hover peeks, click opens, pin holds it open and Escape collapses it. The movable 160 × 56 compressed pill and 280 × 56 regular pill remain selectable in Appearance.
+Rust/egui/glow draws the floating HUD and custom neon frame directly. The new **Nook** presentation opens from a 240 × 40 capsule into a shallow panel of music, calendar, notes, timer, tasks and quick actions. Nook/Tray navigation and a numerical CPU/GPU/RAM/network/drives/Codex/Claude rail keep your tools and measurements together. Hover peeks, click opens, pin holds it open and Escape collapses it. Choose the layout and movable 160 × 56 compressed or 280 × 56 regular pill in **Preferences → Instruments**. Existing profiles keep their saved presentation; fresh profiles start in Nook.
 
 ![Native Nook with simultaneous utility widgets and numerical system readings](docs/assets/native-nook.png)
 

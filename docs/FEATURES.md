@@ -2,13 +2,13 @@
 
 ## Native Nook preview
 
-A tiny black capsule opens into a shallow row of tools: music, a week calendar, notes, timer wheels, tasks and quick actions. Nook and Tray switch between the widget overview and a persistent file shelf. Hover peeks, click opens, pin keeps it open and Escape collapses it. The original movable/compressible neon pill remains available in Appearance; both presentations use custom native frames.
+A tiny black capsule opens into a shallow row of tools: music, a week calendar, notes, timer wheels, tasks and quick actions. Nook and Tray switch between the widget overview and a persistent file shelf. Hover peeks, click opens, pin keeps it open and Escape collapses it. Choose either layout in **Preferences → Instruments → HUD layout**. The original movable/compressible neon pill keeps its saved position; both presentations use custom native frames. Existing profiles keep their presentation, and fresh profiles start in Nook.
 
 The numerical bottom rail keeps CPU, GPU, memory, network, selected drives, Codex and Claude visible. Focused instruments and AI views retain stress gradients, histories, source details, reported reset windows and allowance drain. Missing readings stay unavailable and stale readings keep their original timestamps. Saved connection intent and independent utility storage survive restarts.
 
 Notes include B/I/U; tasks include completion and favourites; deadline timers include hour/minute/second wheels and presets. Windows media controls use system sessions, Mac Music control is opt-in, calendar accepts local recurring ICS events, and Mac can request native Calendar permission. The explicit camera mirror stops when hidden or under pressure. Permission and unsupported-source states are visible. The custom three-step Settings flow retains themes, motion, configured drives, tray access, opt-in startup and signed native updates.
 
-[Nook release notes](releases/v0.2.0-alpha.5.md) · [Native controls](../src-native/README.md) · [Reference evidence](../reference-learning/notchnook/study.md) · [Validation](VALIDATION.md)
+[Nook release notes](releases/v0.2.0-alpha.6.md) · [Native controls](../src-native/README.md) · [Reference evidence](../reference-learning/notchnook/study.md) · [Validation](VALIDATION.md)
 
 ## Existing WebView release
 

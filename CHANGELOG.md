@@ -12,7 +12,7 @@
 - Instruments and AI tabs retain numerical system readings, gradient stress bars, history, five-hour reset windows and measured allowance drain. Local notes, tasks, deadline timers and file references use separate bounded, recoverable storage.
 - Saved Codex connection intent and last-known allowance survive retry failures. Stale readings show their original timestamp and connection state; explicit disconnect clears them.
 - Bridge migration recognises owned Windows version folders and macOS versioned app bundles while preserving foreign Claude configuration.
-- Added source regressions for timer/state migration, camera frame bounds, calendar recurrence, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls, saved note/task/timer checks and native frame captures. Alpha.5 exact-source Windows/Mac acceptance passed; its public updater proof failed replacement Controls. Alpha.6 repair checks and target installation remain pending. Exact motion timing is unknown. This section is not a published-release claim.
+- Added source regressions for timer/state migration, camera frame bounds, calendar recurrence, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls, saved note/task/timer checks and native frame captures. Alpha.6 exact-source Windows/Mac acceptance passed; signed publication, public GUI update and target installation remain pending. Alpha.5's public updater proof failed replacement Controls. Exact motion timing is unknown. This section is not a published-release claim.
 
 ## [0.2.0-alpha.4] - 2026-10-07
 
