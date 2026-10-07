@@ -6,6 +6,7 @@
 - Embedded the Neon N icon in the Windows executable and native windows; the tray now uses the same mark. macOS retains its bundled app icon.
 - Controls use two columns when a small monitor limits the popup height, keeping every action reachable without scrolling.
 - Added real Windows mouse-input checks at all eight edges/corners, all six menu actions and Escape dismissal, plus executable/window icon checks.
+- Added a separate signed native update channel with bounded downloads, archive size/hash verification, normal-exit installation, retained application backup and startup acknowledgement. Settings includes automatic checks/downloads, Check now, progress and Restart and update; failed automatic downloads wait for a new check. The stable webview updater feed is unchanged.
 
 ## [0.2.0-alpha.2] - 2026-10-07
 

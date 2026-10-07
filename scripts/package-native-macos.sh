@@ -35,15 +35,17 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$short_version</string>
   <key>CFBundleVersion</key><string>$short_version</string>
+  <key>NeonHudNativeVersion</key><string>$version</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 EOF
 cat > "$out/PREVIEW.txt" <<EOF
 Neon HUD Native $version is an unsigned preview. Open the app from the DMG or ZIP.
-This preview is not connected to the existing updater and is not an installed release.
+Updates use the signed native-preview channel in Settings / Preferences / Startup & updates.
+Copy the app to a writable Applications folder before applying updates.
 EOF
 cp "$out/PREVIEW.txt" "$app/Contents/Resources/PREVIEW.txt"
 
 plutil -lint "$app/Contents/Info.plist"
-ditto -c -k --sequesterRsrc --keepParent "$app" "$out/neon-hud-native-macos-unsigned-preview.zip"
+ditto -c -k --keepParent "$app" "$out/neon-hud-native-macos-unsigned-preview.zip"
 hdiutil create -volname 'Neon HUD Native Preview' -srcfolder "$app" -ov -format UDZO "$out/neon-hud-native-macos-unsigned-preview.dmg"

@@ -288,7 +288,7 @@ try {
             $menuChecks += [pscustomobject]@{ edge=$edge; opensInward=$safe; escapeDismissed=$true; screenshot=[IO.Path]::GetFileName($screenshot); captureMethod=$method }
         }
         # Verify real menu actions without bypassing the click handlers.
-        $actions = if ($QuitMenu) { @('quit') } else { @('compress','expand','pause','resume','reset','settings','hide') }
+        $actions = if ($QuitMenu) { @('quit') } else { @('expand','compress','pause','resume','reset','settings','hide') }
         foreach ($action in $actions) {
             $hudWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
             if ($null -eq $hudWindow) { throw "HUD disappeared before $action" }

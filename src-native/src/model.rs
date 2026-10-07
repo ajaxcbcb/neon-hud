@@ -40,9 +40,8 @@ pub fn controls_layout(size: [f32; 2]) -> Option<ControlsLayout> {
         .min(height / 40.);
     let header_height = if compact { 24. } else { 42_f32 }.min(height * 0.3);
     let button_width = (width - 2. * padding - (columns - 1) as f32 * gap) / columns as f32;
-    let button_height = ((height - header_height - padding - (rows - 1) as f32 * gap)
-        / rows as f32)
-        .min(32.);
+    let button_height =
+        ((height - header_height - padding - (rows - 1) as f32 * gap) / rows as f32).min(32.);
     let buttons = std::array::from_fn(|index| {
         [
             padding + (index % columns) as f32 * (button_width + gap),

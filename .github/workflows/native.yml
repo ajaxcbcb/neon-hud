@@ -9,6 +9,7 @@ on:
       - 'src-tauri/**'
       - 'scripts/native-windows-smoke.ps1'
       - 'scripts/package-native-macos.sh'
+      - 'scripts/native-release-manifest.py'
       - 'LICENSE-APACHE'
       - 'NOTICE'
       - 'THIRD-PARTY-NOTICES.md'
@@ -19,7 +20,13 @@ on:
       - 'src-tauri/**'
       - 'scripts/native-windows-smoke.ps1'
       - 'scripts/package-native-macos.sh'
+      - 'scripts/native-release-manifest.py'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a signed native preview after all checks pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,15 +55,24 @@ jobs:
         id: format
         continue-on-error: true
         run: cargo fmt --manifest-path src-native/Cargo.toml --check
+      - name: Verify committed dependency resolution
+        id: resolution
+        continue-on-error: true
+        shell: bash
+        run: cargo metadata --manifest-path src-native/Cargo.toml --format-version 1 --locked > "$RUNNER_TEMP/native-metadata.json"
+      - name: Resolve dependency repair
+        if: steps.resolution.outcome == 'failure'
+        shell: bash
+        run: cargo metadata --manifest-path src-native/Cargo.toml --format-version 1 > "$RUNNER_TEMP/native-metadata.json"
       - name: Generate formatting repair patch
-        if: steps.format.outcome == 'failure'
+        if: steps.format.outcome == 'failure' || steps.resolution.outcome == 'failure'
         shell: bash
         run: |
           cargo fmt --manifest-path src-native/Cargo.toml
           cargo fmt --manifest-path src-tauri/Cargo.toml
           git diff --binary -- src-native src-tauri > "$RUNNER_TEMP/native-format.patch"
       - name: Upload formatting repair patch
-        if: always() && steps.format.outcome == 'failure'
+        if: always() && (steps.format.outcome == 'failure' || steps.resolution.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: native-format-repair-${{ matrix.os }}
@@ -112,7 +128,7 @@ jobs:
           Copy-Item -LiteralPath 'src-native/licenses' -Destination $package -Recurse
           @'
           Unsigned native desktop preview. Extract the ZIP and run neon-hud-native.exe.
-          This preview is not connected to the existing updater and is not an installed release.
+          Updates use the signed native-preview channel in Settings / Preferences / Startup & updates.
           '@ | Set-Content -LiteralPath (Join-Path $package 'PREVIEW.txt')
           Compress-Archive -LiteralPath $package -DestinationPath "$package.zip" -Force
       - name: Upload Windows smoke evidence
@@ -149,9 +165,64 @@ jobs:
             src-native/Cargo.lock
           if-no-files-found: error
           retention-days: 14
-      - name: Enforce formatting gate
-        if: always() && steps.format.outcome == 'failure'
+      - name: Enforce committed source gate
+        if: always() && (steps.format.outcome == 'failure' || steps.resolution.outcome == 'failure')
         shell: bash
         run: |
-          echo 'Native source formatting failed; see the runner-specific repair patch artifact.' >&2
+          echo 'Formatting or dependency lockfile needs repair; see the runner-specific repair patch artifact.' >&2
           exit 1
+
+  publish-native:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/codex/native-desktop'
+    needs: native-preview
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*-unsigned-preview
+          path: native-packages
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Create signed channel metadata
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: python3 scripts/native-release-manifest.py native-packages native-release "$SOURCE_COMMIT"
+      - name: Sign native archives and manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        shell: bash
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          for file in native-release/*.zip native-release/native-update.json; do
+            npx --no-install tauri signer sign "$file" > /dev/null
+            test -s "$file.sig"
+          done
+      - name: Independently verify release signatures
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+          python3 scripts/native-release-manifest.py --verify-signatures native-release
+      - name: Publish immutable native preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="$(python3 -c 'import json;print(json.load(open("native-release/native-update.json"))["version"])')"
+          tag="v$version"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo 'Release already exists; do not overwrite signed releases.' >&2
+            exit 1
+          fi
+          notes="docs/releases/$tag.md"
+          test -f "$notes"
+          gh release create "$tag" native-release/* --draft --prerelease --target "$GITHUB_SHA" --title "Neon HUD Native $version" --notes-file "$notes"
+          gh release edit "$tag" --draft=false

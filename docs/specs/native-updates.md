@@ -1,0 +1,11 @@
+# Signed native updates
+
+Deliverable: the native pill can check for, download and apply a newer native release from Settings, without resetting its profile or changing startup. Keep the existing custom Settings frame, icons, themes, small pill, tray and pressure backoff. The original desktop app's stable feed stays unchanged.
+
+The native-preview channel uses GitHub releases. Each eligible release contains `native-update.json` and a Minisign signature made with the existing release signing key. The signed manifest binds schema 1, channel, semantic version, source commit and per-platform HTTPS URL, size and SHA-256. Reject unsupported platforms, invalid signatures, downgrades, untrusted origins and incomplete downloads. Archive extraction rejects unsafe paths, links, duplicate destinations and excessive sizes.
+
+An independent update worker keeps networking away from metrics and profile saves. Separate native update preferences survive the typed core settings serializer. Automatic checks and downloads back off under pressure. Settings shows the installed version, check/download progress, errors and a Restart and update button. Restart requires a verified staged update and a successful profile flush. A copied helper waits for normal app exit, checks the payload again, keeps the old executable or app bundle as a backup, replaces it and launches the new version. The helper never kills the HUD. The new app acknowledges successful startup after its profile has loaded.
+
+Windows applies its signed ZIP to the existing executable path, preserving shortcuts and login startup. Mac updates the existing writable app bundle and retains executable permissions. Release signatures authenticate downloads; the preview does not yet have Windows Authenticode or Apple notarization.
+
+Acceptance: locked Windows/Mac builds and core regressions; negative signature/version/archive tests; actual Windows right-click actions; signed public manifest and archive digests; an updater-capable older release checks, downloads and restarts into a newer signed release while retaining preferences. The already installed alpha.2 needs one bootstrap installation because it has no native updater. Target-machine installation and interaction need a fresh shared-host admission.

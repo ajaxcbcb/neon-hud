@@ -109,8 +109,9 @@ impl Tray {
         let quit = MenuItem::new("Quit Neon HUD Native", true, None);
         menu.append_items(&[&show, &settings, &compress, &quit])
             .map_err(|e| e.to_string())?;
-        let image = eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/32x32.png"))
-        .map_err(|e| e.to_string())?;
+        let image =
+            eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/32x32.png"))
+                .map_err(|e| e.to_string())?;
         let icon =
             Icon::from_rgba(image.rgba, image.width, image.height).map_err(|e| e.to_string())?;
         let _icon = TrayIconBuilder::new()
@@ -172,8 +173,9 @@ mod tests {
         let app = super::app_icon();
         assert_eq!((app.width, app.height), (128, 128));
         assert!(std::sync::Arc::ptr_eq(&app, &super::app_icon()));
-        let tray = eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/32x32.png"))
-        .unwrap();
+        let tray =
+            eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/32x32.png"))
+                .unwrap();
         assert_eq!((tray.width, tray.height), (32, 32));
         for icon in [&*app, &tray] {
             assert!(icon

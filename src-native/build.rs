@@ -28,7 +28,11 @@ fn main() {
     fs::write(&script, format!("1 ICON \"{icon_path}\"\n")).unwrap();
 
     let mut compilers: Vec<PathBuf> = env::var_os("PATH")
-        .map(|path| env::split_paths(&path).map(|dir| dir.join("rc.exe")).collect())
+        .map(|path| {
+            env::split_paths(&path)
+                .map(|dir| dir.join("rc.exe"))
+                .collect()
+        })
         .unwrap_or_default();
     if let Some(program_files) = env::var_os("ProgramFiles(x86)") {
         let sdk = PathBuf::from(program_files).join("Windows Kits/10/bin");
@@ -54,5 +58,8 @@ fn main() {
         .status()
         .expect("Could not run the Windows SDK resource compiler");
     assert!(result.success(), "Could not compile the native app icon");
-    println!("cargo:rustc-link-arg-bin=neon-hud-native={}", resource.display());
+    println!(
+        "cargo:rustc-link-arg-bin=neon-hud-native={}",
+        resource.display()
+    );
 }

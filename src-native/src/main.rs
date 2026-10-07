@@ -3,6 +3,7 @@ mod backend;
 mod desktop;
 mod model;
 mod paint;
+mod updater;
 
 use backend::{Command, Event, Worker};
 use desktop::{Tray, TrayAction};
@@ -25,6 +26,13 @@ fn now() -> f64 {
         .as_secs_f64()
 }
 fn main() -> eframe::Result<()> {
+    if let Some(result) = updater::run_helper_cli() {
+        if let Err(error) = result {
+            eprintln!("Native update failed: {error}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     if neon_hud_lib::native_api::run_bridge_cli() {
         return Ok(());
     }
@@ -47,6 +55,23 @@ fn main() -> eframe::Result<()> {
         Ok(d) => d,
         Err(e) => {
             eprintln!("{e}");
+            return Ok(());
+        }
+    };
+    if let Some(result) = update_cli(&args, &dir) {
+        match result {
+            Ok(receipt) => println!("{receipt}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+    let _instance = match updater::acquire_instance(&dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("{error}");
             return Ok(());
         }
     };
@@ -80,8 +105,61 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+fn update_cli(args: &[String], profile: &std::path::Path) -> Option<Result<Value, String>> {
+    let mode = args.get(1)?.as_str();
+    if !matches!(mode, "--update-check" | "--update-download" | "--update-install"
+        | "--verify-native-manifest" | "--verify-native-archive") { return None; }
+    Some((|| {
+        if mode.starts_with("--verify-native-") {
+            let manifest = std::fs::read(args.get(2).ok_or("Manifest path required")?)
+                .map_err(|e| e.to_string())?;
+            let signature = std::fs::read(args.get(3).ok_or("Signature path required")?)
+                .map_err(|e| e.to_string())?;
+            let version = updater::verify_manifest_bytes(&manifest, &signature)?;
+            if mode == "--verify-native-archive" {
+                let platform = if cfg!(windows) { "windows-x86_64" }
+                    else if cfg!(target_arch="aarch64") { "macos-aarch64" }
+                    else { "macos-x86_64" };
+                updater::verify_archive_file(&manifest, &signature, platform,
+                    std::path::Path::new(args.get(4).ok_or("Archive path required")?))?;
+            }
+            return Ok(json!({"verified":true,"version":version}));
+        }
+        let lease = if mode == "--update-install" {
+            Some(updater::acquire_instance(profile)?)
+        } else { None };
+        let current = env!("CARGO_PKG_VERSION");
+        let Some(offer) = updater::check_now()? else {
+            return Ok(json!({"status":"current","version":current}));
+        };
+        let version = offer.version.clone();
+        if mode == "--update-check" {
+            return Ok(json!({"status":"available","installedVersion":current,
+                "version":version,"signed":true}));
+        }
+        let stage = updater::download_now(profile, offer)?;
+        if mode == "--update-install" {
+            updater::launch_helper(&stage)?;
+            drop(lease);
+        }
+        Ok(json!({"status":if mode == "--update-install" {"restart_requested"} else {"verified"},
+            "installedVersion":current,"version":version,"signed":true}))
+    })())
+}
+
 struct App {
     worker: Worker,
+    profile_dir: PathBuf,
+    update_worker: updater::Worker,
+    update_preferences: UpdatePreferences,
+    update_status: String,
+    update_offer: Option<updater::Offer>,
+    update_stage: Option<updater::VerifiedStage>,
+    update_busy: bool,
+    update_progress: Option<(u64, u64)>,
+    last_update: Instant,
+    applying_update: bool,
+    update_acknowledged: bool,
     profile: Value,
     system: Value,
     providers: Value,
@@ -125,6 +203,18 @@ struct App {
     last_screens: Instant,
     position_hold: Instant,
 }
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct UpdatePreferences {
+    automatic_checks: bool,
+    automatic_downloads: bool,
+}
+impl Default for UpdatePreferences {
+    fn default() -> Self {
+        Self { automatic_checks: true, automatic_downloads: true }
+    }
+}
 impl App {
     fn new(
         cc: &eframe::CreationContext<'_>,
@@ -153,7 +243,19 @@ impl App {
             .and_then(|a| a.is_enabled().map_err(|e| e.to_string()))
             .unwrap_or(false);
         Self {
-            worker: Worker::start(dir, ctx.clone()),
+            worker: Worker::start(dir.clone(), ctx.clone()),
+            update_worker: updater::Worker::start(dir.clone(), ctx.clone()),
+            update_preferences: std::fs::read(dir.join("updater-settings.json"))
+                .ok().and_then(|v| serde_json::from_slice(&v).ok()).unwrap_or_default(),
+            profile_dir: dir,
+            update_status: "Ready to check for updates".into(),
+            update_offer: None,
+            update_stage: None,
+            update_busy: false,
+            update_progress: None,
+            last_update: Instant::now() - Duration::from_secs(6 * 3600),
+            applying_update: false,
+            update_acknowledged: false,
             profile: json!({"theme":"circuit","size":"compact","motion":"playful","alwaysOnTop":true,"reducedMotion":false,"metrics":{"cpu":true,"gpu":true,"ram":true,"network":true,"storage":true,"ai":true},"resources":{"adaptive":true,"samplingMs":1000},"storageDriveIds":[]}),
             system: Value::Null,
             providers: Value::Null,
@@ -362,6 +464,7 @@ impl App {
                         Err(e) => {
                             self.status = e;
                             self.quitting = false;
+                            self.applying_update = false;
                             self.settings = true;
                             self.show(ctx);
                         }
@@ -373,7 +476,22 @@ impl App {
                     self.last_providers = Instant::now() - Duration::from_secs(120);
                 }
                 Event::Stopped => {
-                    ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Close)
+                    if self.applying_update {
+                        let result = self.update_stage.as_ref()
+                            .ok_or_else(|| "Verified update is missing".to_string())
+                            .and_then(updater::launch_helper);
+                        if let Err(error) = result {
+                            self.update_status = format!("Could not apply update: {error}");
+                            self.applying_update = false;
+                            self.quitting = false;
+                            self.stopping = false;
+                            self.worker = Worker::start(self.profile_dir.clone(), ctx.clone());
+                            self.settings = true;
+                            self.show(ctx);
+                            continue;
+                        }
+                    }
+                    ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Close);
                 }
             }
         }
@@ -1282,18 +1400,118 @@ impl App {
         ui.label("Closing the HUD hides it in the tray. Quit exits it.");
         ui.separator();
         ui.heading("Updates");
-        ui.label(egui::RichText::new("Native preview updates are downloaded from GitHub.\nSigned automatic native updates are still being built.\nYour installed HUD keeps its existing update settings.").small());
-        if ui.button("Open preview releases").clicked() {
-            if let Err(e) = open::that("https://github.com/ajaxcbcb/neon-hud/releases") {
-                self.status = e.to_string();
+        let mut changed = ui.checkbox(&mut self.update_preferences.automatic_checks,
+            "Check automatically").changed();
+        changed |= ui.checkbox(&mut self.update_preferences.automatic_downloads,
+            "Download automatically · when pressure is low").changed();
+        if changed {
+            let result = serde_json::to_vec_pretty(&self.update_preferences)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    let target = self.profile_dir.join("updater-settings.json");
+                    let temporary = self.profile_dir.join("updater-settings.json.tmp");
+                    std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
+                    std::fs::rename(temporary, target).map_err(|e| e.to_string())
+                });
+            if let Err(error) = result {
+                self.update_status = format!("Update preference could not be saved: {error}");
             }
         }
-        ui.add_space(12.);
+        ui.add(egui::Label::new(egui::RichText::new(&self.update_status).small()).truncate())
+            .on_hover_text(&self.update_status);
+        if let Some((done, total)) = self.update_progress {
+            ui.add(egui::ProgressBar::new(done as f32 / total.max(1) as f32)
+                .text(format!("{} / {}", bytes(done as f64), bytes(total as f64))));
+        }
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!self.update_busy && !self.quitting,
+                egui::Button::new("Check now")).clicked() {
+                self.check_updates();
+            }
+            if self.update_stage.is_some() {
+                if ui.add_enabled(!self.update_busy && self.writable && !self.quitting,
+                    egui::Button::new("Restart and update")).clicked() {
+                    self.applying_update = true;
+                    self.quitting = true;
+                    self.update_status = "Saving your settings before restarting…".into();
+                }
+            } else if self.update_offer.is_some() && !self.update_busy {
+                if ui.button("Download update").clicked() {
+                    self.download_update();
+                }
+            }
+        });
+        ui.add_space(6.);
         ui.label(
-            egui::RichText::new("0.2.0-alpha.1 · Rust / egui\nApache 2.0 + MIT")
+            egui::RichText::new(format!("{} · native-preview · signed updates\nApache 2.0 + MIT", env!("CARGO_PKG_VERSION")))
                 .small()
                 .color(self.palette().dim),
         );
+    }
+    fn check_updates(&mut self) {
+        if self.update_busy { return; }
+        if self.update_worker.tx.send(updater::Command::Check).is_ok() {
+            self.update_busy = true;
+            self.update_progress = None;
+            self.update_status = "Checking signed native releases…".into();
+            self.last_update = Instant::now();
+        } else {
+            self.update_status = "Update service is unavailable; restart the HUD to retry".into();
+        }
+    }
+    fn download_update(&mut self) {
+        if self.update_busy { return; }
+        if let Some(offer) = self.update_offer.clone() {
+            if self.update_worker.tx.send(updater::Command::Download(offer)).is_ok() {
+                self.update_busy = true;
+                self.update_status = "Downloading signed update…".into();
+            }
+        }
+    }
+    fn update_events(&mut self) {
+        while let Ok(event) = self.update_worker.rx.try_recv() {
+            match event {
+                updater::Event::State(updater::Status::Checking) => {}
+                updater::Event::State(updater::Status::Downloading { done, total }) => {
+                    self.update_progress = Some((done, total));
+                    self.update_status = "Downloading and verifying…".into();
+                }
+                updater::Event::State(updater::Status::Available(offer)) => {
+                    self.update_busy = false;
+                    self.update_status = format!("{} available", offer.version);
+                    self.update_offer = Some(offer);
+                }
+                updater::Event::State(updater::Status::Current) => {
+                    self.update_busy = false;
+                    self.update_offer = None;
+                    self.update_stage = None;
+                    self.update_status = format!("You're up to date · {}", env!("CARGO_PKG_VERSION"));
+                }
+                updater::Event::Ready(stage) => {
+                    self.update_busy = false;
+                    self.update_progress = None;
+                    self.update_status = "Update verified · ready to restart".into();
+                    self.update_stage = Some(stage);
+                }
+                updater::Event::Error(error) => {
+                    self.update_busy = false;
+                    self.update_progress = None;
+                    // A failed automatic download waits for a new explicit check.
+                    self.update_offer = None;
+                    self.update_status = format!("Update failed: {error}");
+                }
+            }
+        }
+        if self.smoke || self.quitting || !self.loaded { return; }
+        if self.update_preferences.automatic_checks && self.mode == Mode::Normal
+            && self.started.elapsed() > Duration::from_secs(5)
+            && self.last_update.elapsed() >= Duration::from_secs(6 * 3600) {
+            self.check_updates();
+        }
+        if self.update_preferences.automatic_checks && self.update_preferences.automatic_downloads && self.mode == Mode::Normal
+            && self.update_offer.is_some() && self.update_stage.is_none() && !self.update_busy {
+            self.download_update();
+        }
     }
     fn detail_window(&mut self, ctx: &egui::Context) {
         if !self.details {
@@ -1790,6 +2008,7 @@ impl eframe::App for App {
             self.last_screens = Instant::now();
         }
         self.events(ctx);
+        self.update_events();
         self.palette().apply(ctx);
         if let Some(tray) = &self.tray {
             for action in tray.actions() {
@@ -1820,17 +2039,24 @@ impl eframe::App for App {
         self.detail_window(ctx);
         self.hover_window(ctx);
         if self.smoke
-            && self.started.elapsed() > Duration::from_secs(if self.smoke_interaction { 30 } else { 12 })
+            && self.started.elapsed()
+                > Duration::from_secs(if self.smoke_interaction { 30 } else { 12 })
         {
             self.quitting = true;
         }
         self.persist();
+        if self.loaded && self.writable && !self.update_acknowledged {
+            if let Err(error) = updater::acknowledge_from_args(&self.profile_dir) {
+                self.update_status = format!("Update startup acknowledgement failed: {error}");
+            }
+            self.update_acknowledged = true;
+        }
         let interval = self.mode.interval(
             number(&self.profile["resources"], "samplingMs").unwrap_or(1000.) as u64,
             self.hidden,
         );
         ctx.request_repaint_after(Duration::from_millis(interval));
-        if self.busy || self.save_pending || self.quitting {
+        if self.busy || self.save_pending || self.quitting || self.update_busy {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
