@@ -195,6 +195,7 @@ jobs:
   development-signing:
     if: github.event_name == 'workflow_dispatch' && inputs.development_signing
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Reject conflicting publication modes
@@ -212,6 +213,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-native -> target
+          cache-on-failure: true
       - name: Verify and build the committed native source
         shell: pwsh
         run: |
@@ -229,8 +231,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Build altered committed source.' }
       - name: Sign and verify the development package
         shell: pwsh
+        timeout-minutes: 12
         run: |
           ./scripts/sign-native-development.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-development-signing" -SourceCommit '${{ github.sha }}'
+      - name: Always remove journaled development trust and keys
+        if: always()
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          ./scripts/sign-native-development.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-development-signing" -SourceCommit '${{ github.sha }}' -CleanupOnly
+      - name: Upload signing stage diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-development-signing-diagnostics
+          path: ${{ runner.temp }}/native-development-signing/diagnostics/**
+          if-no-files-found: warn
+          retention-days: 14
       - name: Provide software OpenGL for isolated Nook acceptance
         shell: pwsh
         run: |
