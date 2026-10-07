@@ -7,6 +7,8 @@
   {#if name === 'cpu'}
     <rect x="5" y="5" width="14" height="14" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/>
     <path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/>
+  {:else if name === 'gpu'}
+    <rect x="2" y="6" width="19" height="12" rx="2"/><circle cx="10" cy="12" r="4"/><path d="m10 8 1 3 3 1-3 1-1 3-1-3-3-1 3-1ZM21 9h1v7M5 18v3m3-3v3m3-3v3m5-13h2m-2 4h2"/>
   {:else if name === 'ram'}
     <rect x="2" y="6" width="20" height="11" rx="2"/><path d="M6 10v3m4-3v3m4-3v3m4-3v3M6 17v3m4-3v3m4-3v3m4-3v3"/>
   {:else if name === 'network'}

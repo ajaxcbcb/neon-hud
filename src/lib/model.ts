@@ -18,10 +18,11 @@ export interface Settings {
   interface: string;
   warning: number;
   critical: number;
-  metrics: { cpu: boolean; ram: boolean; network: boolean; storage: boolean; ai: boolean };
+  metrics: { cpu: boolean; gpu: boolean; ram: boolean; network: boolean; storage: boolean; ai: boolean };
   storageDriveIds: string[];
-  performance: { cpuPercent: number; memoryPercent: number; temperatureCelsius: number; storagePercent: number };
-  resources: { adaptive: boolean };
+  gpuId: string;
+  performance: { cpuPercent: number; gpuPercent: number; memoryPercent: number; temperatureCelsius: number; storagePercent: number };
+  resources: { adaptive: boolean; samplingMs: number };
   codexEnabled: boolean;
   autoUpdates: boolean;
 }
@@ -34,6 +35,19 @@ export interface SystemSnapshot {
   defaultInterface: string | null;
   temperatures: { label: string; celsius: number }[];
   drives: StorageDrive[];
+  gpus?: GpuSnapshot[];
+}
+export interface GpuSnapshot {
+  id: string;
+  name: string;
+  utilizationPercent: number | null;
+  memoryUsedBytes: number | null;
+  memoryTotalBytes: number | null;
+  temperatureCelsius: number | null;
+  sampledAt: number;
+  source: string;
+  status: 'live' | 'unavailable' | 'error';
+  message: string | null;
 }
 export interface StorageDrive {
   id: string;
@@ -70,10 +84,10 @@ export const defaults: Settings = {
   version: 1, completed: false, step: 1, theme: 'circuit', size: 'compact',
   corner: 'middle-right', monitor: 0, alwaysOnTop: true, opacity: 1, textScale: 1,
   reducedMotion: false, motion: 'chaotic', launchAtLogin: false, notifications: false, interface: 'auto',
-  warning: 20, critical: 10, metrics: { cpu: true, ram: true, network: true, storage: true, ai: true },
-  storageDriveIds: [],
-  performance: { cpuPercent: 90, memoryPercent: 90, temperatureCelsius: 85, storagePercent: 90 },
-  resources: { adaptive: true },
+  warning: 20, critical: 10, metrics: { cpu: true, gpu: true, ram: true, network: true, storage: true, ai: true },
+  storageDriveIds: [], gpuId: 'auto',
+  performance: { cpuPercent: 90, gpuPercent: 90, memoryPercent: 90, temperatureCelsius: 85, storagePercent: 90 },
+  resources: { adaptive: true, samplingMs: 250 },
   codexEnabled: false,
   autoUpdates: true,
 };
@@ -81,6 +95,8 @@ export function normalizeSettings(value: unknown): Settings {
   const input = (value && typeof value === 'object' ? value : {}) as Partial<Settings>;
   const result = { ...defaults, ...input, metrics: { ...defaults.metrics, ...input.metrics }, performance: { ...defaults.performance, ...input.performance }, resources: { ...defaults.resources, ...input.resources }, version: 1 } as Settings;
   result.resources.adaptive = typeof result.resources.adaptive === 'boolean' ? result.resources.adaptive : true;
+  result.resources.samplingMs = [250, 500, 1000, 2000].includes(result.resources.samplingMs) ? result.resources.samplingMs : 250;
+  result.gpuId = typeof result.gpuId === 'string' && result.gpuId.trim().length > 0 && result.gpuId.length <= 1024 ? result.gpuId : 'auto';
   if (!['circuit', 'cyberpunk', 'aurora'].includes(result.theme)) result.theme = defaults.theme;
   if (!['compact', 'expanded'].includes(result.size)) result.size = defaults.size;
   if (!['chaotic', 'playful', 'quiet'].includes(result.motion)) result.motion = defaults.motion;
@@ -92,12 +108,12 @@ export function normalizeSettings(value: unknown): Settings {
   result.step = Math.floor(clamp(result.step, 1, 3, 1));
   result.warning = clamp(result.warning, 1, 100, 20);
   result.critical = clamp(result.critical, 0, result.warning, 10);
-  for (const key of ['cpuPercent', 'memoryPercent', 'storagePercent'] as const) result.performance[key] = clamp(result.performance[key], 50, 100, defaults.performance[key]);
+  for (const key of ['cpuPercent', 'gpuPercent', 'memoryPercent', 'storagePercent'] as const) result.performance[key] = clamp(result.performance[key], 50, 100, defaults.performance[key]);
   result.performance.temperatureCelsius = clamp(result.performance.temperatureCelsius, 40, 120, 85);
   for (const name of ['completed', 'alwaysOnTop', 'reducedMotion', 'launchAtLogin', 'notifications', 'codexEnabled', 'autoUpdates'] as const) {
     result[name] = typeof result[name] === 'boolean' ? result[name] : defaults[name];
   }
-  for (const name of ['cpu', 'ram', 'network', 'storage', 'ai'] as const) result.metrics[name] = typeof result.metrics[name] === 'boolean' ? result.metrics[name] : true;
+  for (const name of ['cpu', 'gpu', 'ram', 'network', 'storage', 'ai'] as const) result.metrics[name] = typeof result.metrics[name] === 'boolean' ? result.metrics[name] : true;
   result.storageDriveIds = Array.isArray(result.storageDriveIds)
     ? [...new Set(result.storageDriveIds.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 1024))].slice(0, 64) : [];
   if (typeof result.interface !== 'string') result.interface = 'auto';
@@ -121,6 +137,25 @@ export const rate = (bytes: number) => (bytes / 1048576).toFixed(bytes >= 104857
 export function selectedDrives(snapshot: SystemSnapshot | null, ids: string[]) {
   return (snapshot?.drives || []).filter(drive => !ids.length || ids.includes(drive.id));
 }
+export function gpuCurrent(gpu: GpuSnapshot | undefined, now: number) {
+  return !!gpu && gpu.status === 'live' && Number.isFinite(gpu.sampledAt) && now - gpu.sampledAt <= 12 && gpu.sampledAt <= now + 5;
+}
+export function gpuLoad(gpu: GpuSnapshot | undefined, now: number): number | null {
+  return gpuCurrent(gpu, now) && Number.isFinite(gpu!.utilizationPercent) ? Math.max(0, Math.min(100, gpu!.utilizationPercent!)) : null;
+}
+export function selectedGpu(snapshot: SystemSnapshot | null, id: string, now: number) {
+  const gpus = snapshot?.gpus || [];
+  if (id !== 'auto') return gpus.find(gpu => gpu.id === id);
+  return [...gpus].sort((a, b) => (gpuLoad(b, now) ?? (gpuCurrent(b, now) ? -1 : -2)) - (gpuLoad(a, now) ?? (gpuCurrent(a, now) ? -1 : -2)))[0];
+}
+export function gpuDetails(gpu: GpuSnapshot | undefined, now: number): string[] {
+  if (!gpu) return ['Selected GPU unavailable. Adapter detection requires the desktop app.'];
+  const current = gpuCurrent(gpu, now);
+  const load = gpuLoad(gpu, now);
+  return [gpu.name, `${load !== null ? load.toFixed(1) + '% load' : 'Load unavailable'} · ${current && Number.isFinite(gpu.temperatureCelsius) ? gpu.temperatureCelsius!.toFixed(1) + ' °C' : 'Temperature unavailable'}`,
+    `${current && Number.isFinite(gpu.memoryUsedBytes) ? gib(gpu.memoryUsedBytes!) : '—'} / ${Number.isFinite(gpu.memoryTotalBytes) ? gib(gpu.memoryTotalBytes!) : '—'} GiB GPU memory`,
+    ...(gpu.sampledAt > 0 && now - gpu.sampledAt > 12 ? ['Stale GPU reading'] : []), `Source: ${gpu.source}`, ...(gpu.message ? [gpu.message] : [])];
+}
 export function drivePercent(drive: StorageDrive) {
   return drive.totalBytes > 0 ? Math.max(0, Math.min(100, drive.usedBytes / drive.totalBytes * 100)) : null;
 }
@@ -137,6 +172,7 @@ export const sampleSystem: SystemSnapshot = {
   memory: { used: 10.4 * 1073741824, total: 32 * 1073741824, available: 21.6 * 1073741824 },
   networks: [{ name: 'Sample Wi-Fi', down: 2.3 * 1048576, up: .6 * 1048576, received: 450 * 1048576, transmitted: 36 * 1048576 }],
   defaultInterface: 'Sample Wi-Fi', temperatures: [],
+  gpus: [{ id: 'sample-gpu', name: 'Sample graphics', utilizationPercent: 57, memoryUsedBytes: 3 * 1073741824, memoryTotalBytes: 8 * 1073741824, temperatureCelsius: 62, sampledAt: 0, source: 'Sample data', status: 'live', message: null }],
   drives: [
     { id: 'sample-system', name: 'System', mount: 'C:', totalBytes: 512 * 1073741824, usedBytes: 306 * 1073741824, availableBytes: 206 * 1073741824 },
     { id: 'sample-projects', name: 'Projects', mount: 'D:', totalBytes: 1024 * 1073741824, usedBytes: 811 * 1073741824, availableBytes: 213 * 1073741824 },

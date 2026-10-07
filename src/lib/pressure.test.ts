@@ -33,3 +33,25 @@ describe('measured pressure warnings', () => {
     expect(tracker.reading({ ...sampleSystem, sampledAt: 1, temperatures: [{ label: 'CPU Package', celsius: 95 }] }, settings, 1).temperature).toEqual([]);
   });
 });
+
+describe('GPU pressure sample clocks', () => {
+  const gpu = { ...sampleSystem.gpus![0], sampledAt: 100, utilizationPercent: 95, temperatureCelsius: null };
+  it('ignores cached GPU time while system samples advance, then accumulates distinct readings', () => {
+    const tracker = new PressureTracker();
+    const snapshot = (time: number, gpuTime: number) => ({ ...sampleSystem, sampledAt: time, gpus: [{ ...gpu, sampledAt: gpuTime }] });
+    for (let t = 100; t <= 110; t++) tracker.observe(snapshot(t, 100), defaults);
+    expect(tracker.reading(snapshot(110, 100), defaults, 110).gpus).toEqual({});
+    tracker.observe(snapshot(111, 111), defaults);
+    expect(tracker.reading(snapshot(111, 111), defaults, 111).gpus[gpu.id][0]).toContain('sustained GPU');
+    expect(tracker.reading(snapshot(124, 111), defaults, 124).gpus).toEqual({});
+    tracker.observe({ ...sampleSystem, sampledAt: 125, gpus: [] }, defaults);
+    tracker.observe(snapshot(126, 126), defaults);
+    expect(tracker.reading(snapshot(126, 126), defaults, 126).gpus).toEqual({});
+  });
+  it('flags measured GPU heat immediately but never fabricates unsupported heat', () => {
+    const tracker = new PressureTracker();
+    const hot = { ...sampleSystem, sampledAt: 100, gpus: [{ ...gpu, utilizationPercent: null, temperatureCelsius: 96 }] };
+    expect(tracker.reading(hot, defaults, 100).gpus[gpu.id][0]).toContain('96.0');
+    expect(tracker.reading({ ...hot, gpus: [{ ...gpu, temperatureCelsius: null }] }, defaults, 100).temperature).toEqual([]);
+  });
+});

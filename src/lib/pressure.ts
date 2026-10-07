@@ -1,13 +1,14 @@
 import type { Settings, SystemSnapshot } from './model';
-import { drivePercent } from './model';
+import { drivePercent, gpuCurrent, gpuLoad } from './model';
 
 export interface PressureSignals {
   cpu: string[];
   memory: string[];
   temperature: string[];
   drives: Record<string, string>;
+  gpus: Record<string, string[]>;
 }
-const empty = (): PressureSignals => ({ cpu: [], memory: [], temperature: [], drives: {} });
+const empty = (): PressureSignals => ({ cpu: [], memory: [], temperature: [], drives: {}, gpus: {} });
 
 // Require 10 seconds of consecutive samples for workload pressure. A gap or stale
 // source clears sustained conditions; a temperature/capacity threshold is immediate.
@@ -25,6 +26,14 @@ export class PressureTracker {
       else this.conditions.set(key, { start: prior && time > prior.last && time - prior.last <= 12 ? prior.start : time, last: time });
     }
     this.sampledAt = time;
+    const present = new Set((snapshot.gpus || []).map(gpu => `gpu:${gpu.id}`));
+    for (const key of this.conditions.keys()) if (key.startsWith('gpu:') && !present.has(key)) this.conditions.delete(key);
+    for (const gpu of snapshot.gpus || []) {
+      const key = `gpu:${gpu.id}`, prior = this.conditions.get(key);
+      const load = gpuLoad(gpu, time);
+      if (load === null || load < settings.performance.gpuPercent) this.conditions.delete(key);
+      else if (gpu.sampledAt !== prior?.last) this.conditions.set(key, { start: prior && gpu.sampledAt > prior.last && gpu.sampledAt - prior.last <= 12 ? prior.start : gpu.sampledAt, last: gpu.sampledAt });
+    }
   }
   reading(snapshot: SystemSnapshot | null, settings: Settings, now: number): PressureSignals {
     const result = empty();
@@ -42,6 +51,16 @@ export class PressureTracker {
     for (const drive of snapshot.drives || []) {
       const value = drivePercent(drive);
       if (value !== null && value >= settings.performance.storagePercent) result.drives[drive.id] = `${drive.name || drive.mount}: ${value.toFixed(1)}% used ≥ ${settings.performance.storagePercent}% · low free space`;
+    }
+    for (const gpu of snapshot.gpus || []) {
+      if (!gpuCurrent(gpu, now)) continue;
+      const messages: string[] = [], load = gpuLoad(gpu, now);
+      if (sustained(`gpu:${gpu.id}`) && load !== null && load >= settings.performance.gpuPercent) messages.push(`${gpu.name}: sustained GPU load ${load.toFixed(1)}% ≥ ${settings.performance.gpuPercent}% · may slow graphics work`);
+      if (Number.isFinite(gpu.temperatureCelsius) && gpu.temperatureCelsius! >= settings.performance.temperatureCelsius) {
+        const message = `${gpu.name}: ${gpu.temperatureCelsius!.toFixed(1)} °C · high reported temperature; throttling is not measured`;
+        messages.push(message); result.temperature.push(message);
+      }
+      if (messages.length) result.gpus[gpu.id] = messages;
     }
     return result;
   }

@@ -2,6 +2,14 @@
 
 Checked on 7 October 2026.
 
+## 0.1.2 GPU and fast-sampling increment
+
+- Local Svelte/TypeScript check: zero errors and warnings. Frontend tests: 51 passed, including adapter selection, stale/null capability boundaries, cached GPU pressure timing, recovery evidence, independent polling and finite display transitions with an injected 144 Hz clock.
+- Production frontend build passed; dependency audit reported zero vulnerabilities. Rust formatting passed.
+- The 144 Hz test is a deterministic frame-clock fixture, not a measurement of the installed app's frame rate.
+- Windows/Mac native compilation, native tests, packages and signature checks are pending cloud CI. Native GPU values and full-process performance remain unmeasured.
+- No new local visual/native installation batch ran while the shared machine's interactive lane was reserved. The existing 0.1.1 pill visual evidence remains below; the added GPU layout needs installed inspection.
+
 ## 0.1.1 refinement
 
 - `npm run verify`: 36 tests across nine files, zero Svelte errors/warnings and successful production build.

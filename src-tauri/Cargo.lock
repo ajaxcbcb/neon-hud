@@ -2276,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "neon-hud"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "default-net",
  "serde",
@@ -2289,6 +2289,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-updater",
+ "windows 0.61.3",
  "windows-sys 0.61.2",
 ]
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.2] - 2026-10-07
+
+### Added
+
+- GPU icon, pill measurement and speedometer, adapter selector, expanded multi-adapter measurements and source/capability details.
+- Windows DXGI adapter discovery and cached PDH global GPU activity/dedicated-memory measurements; Mac Metal identity with honest unavailable fields for unsupported global readings.
+- Adjustable 250/500/1000/2000ms CPU, memory and network sampling, independent of slower GPU, sensor and AI polling.
+- Finite display-synced meter transitions without a fixed 60 Hz cap; numerical values retain the measured sample.
+- GPU pressure thresholds and badges; adaptive backoff and recovery require distinct, fresh GPU evidence.
+
+### Improved
+
+- Separate non-overlapping system and provider polling, with hidden-window pause and immediate resume.
+- Cached native snapshots prevent repeated calls from forcing expensive measurements; GPU discovery stays cached for 30 seconds.
+- Idle, hidden and reduced-motion meters stop scheduling animation frames.
+- Existing settings migrate with GPU and fast-sampling defaults while preserving saved choices.
+
+### Validation boundaries
+
+- Unsupported/stale GPU readings stay unavailable. Thermal throttling is not measured.
+- Native GPU accuracy, actual display frame rate, Mac installation and full-process resource usage require separate installed-platform checks.
+
 ## [0.1.1] - 2026-10-07
 
 ### Highlights
@@ -70,4 +92,5 @@ First public preview.
 - Live provider integration and full-process performance targets have not been measured.
 
 [0.1.0]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0
+[0.1.2]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.1

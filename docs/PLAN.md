@@ -4,9 +4,9 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: v0.1.1 published: tiny floating pill, transparent desktop utility window, responsive source connection feedback and signed updater assets. Windows installation is pending shared host admission. Next source increment: real GPU adapters and display-synced animation. Priority P1.
+Status: v0.1.1 public. v0.1.2 GPU and fast-sampling implementation integrated, frontend checks underway, independent backend review active. Native compilation and packaging use cloud CI; local visual/native installation waits for shared host admission. Priority P1.
 
-Next: Verify the public update endpoint, add GPU telemetry and adjustable fast hardware sampling with display-synced animation, then run frontend and cloud native checks. Install only the verified final Windows artifact after shared host admission. No local native build or installer is running.
+Next: Complete frontend/audit/format checks and review, push the v0.1.2 source, verify cloud Windows/Mac builds and signed artifacts, then publish the preview and updater manifest. Install and measure actual GPU/frame rate only after shared host admission.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|

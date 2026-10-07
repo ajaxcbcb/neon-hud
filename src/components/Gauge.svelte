@@ -3,11 +3,13 @@
 </script>
 <script lang="ts">
   import { stressColor } from '../lib/stress';
+  import { displayMeter } from '../lib/display';
   export let value: number | null = null;
   export let label = '';
   export let suffix = '%';
   export let tone = 'normal';
   export let inverse = false;
+  export let reduced = false;
   const gradientId = `stress-gauge-${++sequence}`;
   $: bounded = value === null || !Number.isFinite(value) ? null : Math.max(0, Math.min(100, value));
 </script>
@@ -18,7 +20,7 @@
       {:else}<stop offset="0%" stop-color={stressColor(0)}/><stop offset="79.4%" stop-color={stressColor(70)}/><stop offset="100%" stop-color={stressColor(100)}/>{/if}
     </linearGradient></defs>
     <path class="gauge-track" d="M12 74 A54 54 0 0 1 120 74" pathLength="100"/>
-    {#if bounded !== null}<path class="gauge-fill" style={`stroke:${tone === 'unavailable' ? 'var(--muted)' : `url(#${gradientId})`}`} d="M12 74 A54 54 0 0 1 120 74" pathLength="100" stroke-dasharray={`${bounded} 100`}/>{/if}
+    {#if bounded !== null}<path use:displayMeter={{value: bounded, kind: 'arc', reduced}} class="gauge-fill" style={`stroke:${tone === 'unavailable' ? 'var(--muted)' : `url(#${gradientId})`}`} d="M12 74 A54 54 0 0 1 120 74" pathLength="100"/>{/if}
     <path class="gauge-ticks" d="M12 73h6m3-28 5 3m22-24 2 6m34-6-2 6m26 15-5 3m11 25h6"/>
     <text x="66" y="63" class="gauge-value" text-anchor="middle">{bounded === null ? '—' : bounded.toFixed(0)}<tspan class="gauge-unit">{bounded === null ? '' : suffix}</tspan></text>
     <text x="66" y="82" class="gauge-label" text-anchor="middle">{label}</text>

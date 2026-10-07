@@ -13,8 +13,8 @@ export async function saveSettings(settings: Settings): Promise<void> {
   if (native) return invoke('save_settings', { settings });
   localStorage.setItem('neon-hud-settings', JSON.stringify(settings));
 }
-export async function systemSnapshot(resourceMode: ResourceMode = 'normal'): Promise<SystemSnapshot | null> {
-  return native ? invoke('system_snapshot', { resourceMode }) : null;
+export async function systemSnapshot(resourceMode: ResourceMode = 'normal', samplingMs = 250): Promise<SystemSnapshot | null> {
+  return native ? invoke('system_snapshot', { resourceMode, samplingMs }) : null;
 }
 export async function providerSnapshot(): Promise<ProviderSnapshot> {
   if (native) return invoke('provider_snapshot');

@@ -18,6 +18,7 @@
   import { windowSize, dockPosition, PILL_HEIGHT } from './lib/layout';
   import { idleAttempt, runConnection, connectionView } from './lib/connections';
   import { createRefreshQueue } from './lib/refresh';
+  import { createPoller } from './lib/polling';
 
   import Icon from './components/Icon.svelte';
 
@@ -34,7 +35,7 @@
   let settings: Settings = structuredClone(defaults);
 
   let loaded = false;
-  let appVersion = '0.1.1';
+  let appVersion = '0.1.2';
   let updateStatus: UpdateStatus = { phase: native ? 'idle' : 'preview', message: native ? 'Updates are checked automatically.' : 'Updates are available in the installed app.' };
   const updater = new UpdateController(() => checkUpdate({ timeout: 10000 }), value => updateStatus = value);
   let lastUpdateCheck = 0;
@@ -73,8 +74,15 @@
   $: connecting = codexAttempt.phase === 'pending' || bridgeAttempt.phase === 'pending';
   let pillHeight = PILL_HEIGHT;
   let windowQueue: Promise<void> = Promise.resolve();
-  let lastSystemPoll = 0;
-  let lastProviderPoll = 0;
+  let windowVisible = true;
+  let documentHidden = document.hidden;
+  let systemPoller: ReturnType<typeof createPoller> | undefined;
+  let providerPoller: ReturnType<typeof createPoller> | undefined;
+  $: {
+    const enabled = loaded && !paused && windowVisible && !documentHidden;
+    systemPoller?.setEnabled(enabled);
+    providerPoller?.setEnabled(enabled);
+  }
   const governor = new ResourceGovernor();
   $: resources = governor.update(snapshot, settings, now);
   $: effectiveMotion = resources.quiet ? 'quiet' : settings.motion;
@@ -98,7 +106,7 @@
 
   let saveTimer: ReturnType<typeof setTimeout>;
 
-  $: previewSnapshot = demoPressure ? { ...sampleSystem, sampledAt: now, cpu: 98, memory: { total: 32 * 1073741824, used: 31 * 1073741824, available: 1073741824 }, temperatures: [{ label: 'CPU Package (sample)', celsius: 95 }], drives: sampleSystem.drives.map((drive, index) => index ? drive : { ...drive, usedBytes: 502 * 1073741824, availableBytes: 10 * 1073741824 }) } : { ...sampleSystem, sampledAt: now };
+  $: previewSnapshot = demoPressure ? { ...sampleSystem, sampledAt: now, gpus: sampleSystem.gpus?.map(gpu => ({ ...gpu, sampledAt: now })), cpu: 98, memory: { total: 32 * 1073741824, used: 31 * 1073741824, available: 1073741824 }, temperatures: [{ label: 'CPU Package (sample)', celsius: 95 }], drives: sampleSystem.drives.map((drive, index) => index ? drive : { ...drive, usedBytes: 502 * 1073741824, availableBytes: 10 * 1073741824 }) } : { ...sampleSystem, sampledAt: now, gpus: sampleSystem.gpus?.map(gpu => ({ ...gpu, sampledAt: now })) };
   $: previewProviders = { ...sampleProviders(now), attention: demoQuestion ? [{ id: `demo-${demoQuestion}`, surface: 'claude-code' as Surface, reason: 'Sample question', occurredAt: now, sessionId: 'preview' }] : [] };
 
   $: if (loaded) { settings; scheduleSave(); }
@@ -169,13 +177,12 @@
 
   async function refreshSystem(force = false) {
 
-    if (document.hidden || stop || (paused && !force) || systemBusy) return;
+    if (document.hidden || !windowVisible || stop || (paused && !force) || systemBusy) return;
     systemBusy = true;
-    lastSystemPoll = Date.now() / 1000;
 
     try {
 
-      snapshot = await systemSnapshot(resources.mode);
+      snapshot = await systemSnapshot(resources.mode, settings.resources.samplingMs);
 
       const network = selectedNetwork(snapshot, settings.interface);
 
@@ -183,7 +190,7 @@
 
         if (historyInterface !== network.name) { history = []; historyInterface = network.name; }
 
-        history = [...history.filter(point => snapshot && point.time >= snapshot.sampledAt - 60), { time: snapshot!.sampledAt, down: network.down, up: network.up }].slice(-60);
+        if (history.at(-1)?.time !== snapshot!.sampledAt) history = [...history.filter(point => snapshot && point.time >= snapshot.sampledAt - 60), { time: snapshot!.sampledAt, down: network.down, up: network.up }].slice(-240);
 
       } else history = [];
 
@@ -193,12 +200,11 @@
   }
 
   async function refreshProviders(force = false) {
-    if (stop || (!force && (document.hidden || paused))) return;
+    if (stop || (!force && (document.hidden || !windowVisible || paused))) return;
     await queuedProviderRead(force);
   }
   async function readProviders(force: boolean) {
     providerBusy = true;
-    lastProviderPoll = Date.now() / 1000;
 
     try {
 
@@ -276,12 +282,13 @@
   }
   async function togglePin() { settings.alwaysOnTop = !settings.alwaysOnTop; if (native) await getCurrentWindow().setAlwaysOnTop(settings.alwaysOnTop); }
   function toggleMotion() { settings.motion = settings.motion === 'quiet' ? 'chaotic' : 'quiet'; }
-  function togglePause() { paused = !paused; if (!paused) { void refreshSystem(); void refreshProviders(); } }
+  function togglePause() { paused = !paused; }
   function refreshNow() { void refreshSystem(true); void refreshProviders(true); }
 
   async function toggleSize() { settings.size = settings.size === 'compact' ? 'expanded' : 'compact'; await applyWindow(); }
 
-  async function hide() { if (native) await getCurrentWindow().hide(); else notice = 'The desktop app hides to the system tray or menu bar.'; }
+  function setVisible(visible: boolean) { windowVisible = visible; window.dispatchEvent(new CustomEvent('neon-visibility', { detail: visible })); }
+  async function hide() { if (native) { await getCurrentWindow().hide(); setVisible(false); } else notice = 'The desktop app hides to the system tray or menu bar.'; }
 
   async function showProvider(surface: string) {
 
@@ -296,6 +303,8 @@
   onMount(() => {
 
     const cleanups: (() => void)[] = [];
+    systemPoller = createPoller(() => refreshSystem(), () => resources.systemSeconds * 1000);
+    providerPoller = createPoller(() => refreshProviders(), () => resources.providerSeconds * 1000);
 
     (async () => {
 
@@ -311,6 +320,7 @@
         monitors = (await availableMonitors()).map((m, i) => m.name || `Display ${i + 1}`);
 
         cleanups.push(await listen('open-settings', openConfiguration));
+        cleanups.push(await listen<boolean>('hud-visible', event => setVisible(event.payload)));
 
         cleanups.push(await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); await hide(); }));
 
@@ -322,16 +332,13 @@
 
       }
 
-      await refreshSystem(); await refreshProviders();
       void checkUpdates(true);
 
     })().catch(() => { loaded = true; error = 'Some startup settings could not be loaded. You can continue configuring the HUD.'; });
 
     const timer = setInterval(() => {
-      if (document.hidden || !loaded) return;
+      if (document.hidden || !windowVisible || !loaded) return;
       now = Date.now() / 1000;
-      if (now - lastSystemPoll >= resources.systemSeconds) void refreshSystem();
-      if (now - lastProviderPoll >= resources.providerSeconds) void refreshProviders();
     }, 1000);
     // Works from the tray too; defer automatic network work during pressure.
     const updatesTimer = setInterval(() => {
@@ -340,7 +347,7 @@
 
     const recover = setInterval(async () => {
 
-      if (!native || configure || document.hidden) return;
+      if (!native || configure || document.hidden || !windowVisible) return;
 
       try {
 
@@ -358,11 +365,11 @@
 
     }, 15000);
 
-    const resume = () => { if (!document.hidden) { refreshSystem(); refreshProviders(); } };
+    const resume = () => { documentHidden = document.hidden; };
 
     document.addEventListener('visibilitychange', resume);
 
-    return () => { stop = true; clearTimeout(saveTimer); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
+    return () => { stop = true; systemPoller?.destroy(); providerPoller?.destroy(); clearTimeout(saveTimer); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
 
   });
 
@@ -440,7 +447,7 @@
 
         <div class="page-intro"><span class="eyebrow">STEP 03 / YOUR RHYTHM</span><h1>Keep it useful<span>.</span></h1><p>Pick what stays visible and when your HUD should get your attention.</p></div>
 
-        <div class="preferences-grid"><section class="preferences-panel"><h2>Visible metrics</h2>{#each [{key:'cpu',label:'CPU activity'},{key:'ram',label:'Memory usage'},{key:'network',label:'Network traffic'},{key:'storage',label:'Drive capacity'},{key:'ai',label:'AI allowance'}] as metric}<label class="toggle" for={`metric-${metric.key}`}><input id={`metric-${metric.key}`} type="checkbox" bind:checked={settings.metrics[metric.key as keyof Settings['metrics']]}/><Icon name={metric.key === 'ai' ? 'codex' : metric.key}/><span>{metric.label}</span></label>{/each}<label for="interface">Network interface<select id="interface" bind:value={settings.interface}><option value="auto">Automatic · default route</option>{#each snapshot?.networks || [] as network}<option value={network.name}>{network.name}</option>{/each}</select></label><p class="field-hint">One interface at a time avoids counting VPN traffic twice. System checks adapt from 2–8 seconds with smart resource mode.</p><fieldset class="drive-picker"><legend><Icon name="storage" size={14}/> Choose drives</legend>
+        <div class="preferences-grid"><section class="preferences-panel"><h2>Visible metrics</h2>{#each [{key:'cpu',label:'CPU activity'},{key:'gpu',label:'GPU activity'},{key:'ram',label:'Memory usage'},{key:'network',label:'Network traffic'},{key:'storage',label:'Drive capacity'},{key:'ai',label:'AI allowance'}] as metric}<label class="toggle" for={`metric-${metric.key}`}><input id={`metric-${metric.key}`} type="checkbox" bind:checked={settings.metrics[metric.key as keyof Settings['metrics']]}/><Icon name={metric.key === 'ai' ? 'codex' : metric.key}/><span>{metric.label}</span></label>{/each}<label for="interface">Network interface<select id="interface" bind:value={settings.interface}><option value="auto">Automatic · default route</option>{#each snapshot?.networks || [] as network}<option value={network.name}>{network.name}</option>{/each}</select></label><p class="field-hint">One interface at a time avoids counting VPN traffic twice. CPU, memory and network follow your sampling choice. Smart resource mode slows checks under pressure.</p><label for="gpu-choice">GPU<select id="gpu-choice" bind:value={settings.gpuId}><option value="auto">Automatic · busiest reported GPU</option>{#each snapshot?.gpus || [] as gpu}<option value={gpu.id}>{gpu.name}</option>{/each}{#if settings.gpuId !== 'auto' && !snapshot?.gpus?.some(gpu => gpu.id === settings.gpuId)}<option value={settings.gpuId}>Saved GPU · disconnected</option>{/if}</select></label><p class="field-hint">Windows reports activity and dedicated memory where available. Mac reports GPU identity; unsupported readings stay unavailable.</p><label for="sampling">System sampling<select id="sampling" bind:value={settings.resources.samplingMs}><option value={250}>Fast · 250 ms</option><option value={500}>Balanced · 500 ms</option><option value={1000}>Light · 1 second</option><option value={2000}>Quiet · 2 seconds</option></select></label><p class="field-hint">Meters animate at your display's refresh rate between readings. GPU checks run every second, sensors every 2 seconds, and AI every 5 seconds. Hidden monitoring pauses; pressure reduces these rates.</p><fieldset class="drive-picker"><legend><Icon name="storage" size={14}/> Choose drives</legend>
           <label class="toggle"><input type="checkbox" checked={!settings.storageDriveIds.length} onchange={(event) => settings.storageDriveIds = event.currentTarget.checked ? [] : (snapshot?.drives || []).map(d => d.id)}/><span>All detected drives · include new ones</span></label>
           {#each snapshot?.drives || [] as drive}<label class="drive-choice"><input type="checkbox" checked={!settings.storageDriveIds.length || settings.storageDriveIds.includes(drive.id)} onchange={(event) => { if (!toggleDrive(drive.id, event.currentTarget.checked)) event.currentTarget.checked = true; }}/><span><b>{drive.name || drive.mount}</b><small>{drive.mount} · {gib(drive.availableBytes)} GiB free / {gib(drive.totalBytes)} GiB</small></span><strong>{drivePercent(drive)?.toFixed(0) ?? '—'}%</strong></label>{/each}
           {#each settings.storageDriveIds.filter(id => !snapshot?.drives.some(d => d.id === id)) as id}<div class="drive-missing"><span>Disconnected drive · selection saved</span><button class="text-button" onclick={() => settings.storageDriveIds = settings.storageDriveIds.filter(saved => saved !== id)}>Forget</button></div>{/each}
@@ -448,7 +455,7 @@
           <p class="field-hint">Hover a drive for exact used/free/total measurements. Capacity is per volume; shared storage pools can appear on more than one volume.</p>
         </fieldset></section>
 
-        <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><fieldset class="pressure-settings"><legend>Performance pressure thresholds</legend><div class="form-grid"><label for="cpu-pressure">CPU load %<input id="cpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.cpuPercent}/></label><label for="ram-pressure">RAM used %<input id="ram-pressure" type="number" min="50" max="100" bind:value={settings.performance.memoryPercent}/></label><label for="temp-pressure">Temperature °C<input id="temp-pressure" type="number" min="40" max="120" bind:value={settings.performance.temperatureCelsius}/></label><label for="drive-pressure">Drive used %<input id="drive-pressure" type="number" min="50" max="100" bind:value={settings.performance.storagePercent}/></label></div><p class="field-hint">! flags sustained CPU/RAM pressure (10 seconds), high reported temperatures, or low drive space. Hover for the cause. These signals suggest possible slowdown; thermal throttling is not measured. Temperature is unavailable when no sensor is reported.</p></fieldset><label class="toggle" for="adaptive-resources"><input id="adaptive-resources" type="checkbox" bind:checked={settings.resources.adaptive}/><span>Smart resource mode · adapt to system pressure</span></label><p class="field-hint">CPU/RAM pressure or high reported temperature slows system checks to 4–8 seconds, AI checks to 10–15 seconds, and quiets motion. Recovery needs 20 healthy seconds per step. Drive and route checks are cached longer. Your motion choice returns automatically.</p><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section>
+        <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><fieldset class="pressure-settings"><legend>Performance pressure thresholds</legend><div class="form-grid"><label for="cpu-pressure">CPU load %<input id="cpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.cpuPercent}/></label><label for="gpu-pressure">GPU load %<input id="gpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.gpuPercent}/></label><label for="ram-pressure">RAM used %<input id="ram-pressure" type="number" min="50" max="100" bind:value={settings.performance.memoryPercent}/></label><label for="temp-pressure">Temperature °C<input id="temp-pressure" type="number" min="40" max="120" bind:value={settings.performance.temperatureCelsius}/></label><label for="drive-pressure">Drive used %<input id="drive-pressure" type="number" min="50" max="100" bind:value={settings.performance.storagePercent}/></label></div><p class="field-hint">! flags sustained CPU/GPU/RAM pressure (10 seconds), high reported temperatures, or low drive space. Hover for the cause. These signals suggest possible slowdown; thermal throttling is not measured. Temperature is unavailable when no sensor is reported.</p></fieldset><label class="toggle" for="adaptive-resources"><input id="adaptive-resources" type="checkbox" bind:checked={settings.resources.adaptive}/><span>Smart resource mode · adapt to system pressure</span></label><p class="field-hint">CPU/GPU/RAM pressure or high reported temperature slows system checks to 4–8 seconds, AI checks to 10–15 seconds, and quiets motion. Recovery needs 20 healthy seconds per step. Drive and route checks are cached longer. Your motion choice returns automatically.</p><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section>
         <section class="preferences-panel update-panel"><h2>App updates <small>v{appVersion}</small></h2>
           <label class="toggle" for="auto-updates"><input id="auto-updates" type="checkbox" bind:checked={settings.autoUpdates}/><span>Automatically check and download updates</span></label>
           <p class="field-hint">Checks GitHub on startup and every 6 hours. Downloads wait during high system pressure. Installation and restart require your click.</p>
@@ -486,6 +493,6 @@
 
     </section>
 
-  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}>{#if settings.size === 'compact'}<Pill {settings} {snapshot} {providers} {now} {drainTracker} onSpace={resizePill} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{:else}<Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} {resources} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{/if}</div>{/if}
+  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}>{#if settings.size === 'compact'}<Pill reduced={settings.reducedMotion || effectiveMotion === 'quiet'} {settings} {snapshot} {providers} {now} {drainTracker} onSpace={resizePill} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{:else}<Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} {resources} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{/if}</div>{/if}
 
 </main>

@@ -2,6 +2,8 @@
   import { tick } from 'svelte';
   import Icon from './Icon.svelte';
   import Gauge from './Gauge.svelte';
+  import { displayMeter } from '../lib/display';
+  import { selectedGpu, gpuLoad, gpuDetails } from '../lib/model';
   import { DrainTracker, drainText } from '../lib/drain';
   import { PressureTracker } from '../lib/pressure';
   import { stressColor, stressGradient } from '../lib/stress';
@@ -37,6 +39,9 @@
   $: network = selectedNetwork(snapshot, preview ? 'auto' : settings.interface);
   $: drives = selectedDrives(snapshot, preview ? [] : settings.storageDriveIds);
   $: ram = snapshot?.memory.total ? snapshot.memory.used / snapshot.memory.total * 100 : null;
+  $: gpu = selectedGpu(snapshot, settings.gpuId, now);
+  $: gpuValue = gpuLoad(gpu, now);
+  $: reduced = settings.reducedMotion || settings.motion === 'quiet' || resources.quiet;
   $: shownProviders = [providers.usages.find(p => p.surface === 'codex'), providers.usages.find(p => p.surface === 'claude')];
   $: expanded = settings.size === 'expanded';
   $: scale = Math.max(1048576, ...history.flatMap(p => [p.down, p.up]), network?.down || 0, network?.up || 0);
@@ -47,6 +52,7 @@
     if (key === 'resources') return [...resources.reasons, `System every ${resources.systemSeconds}s · AI every ${resources.providerSeconds}s${resources.quiet ? ' · quiet motion' : ''}`, ...resources.suggestions];
     if (key === 'temperature') return ['High sensor temperature can affect performance. Adjust the threshold in Settings.', 'Sensor availability depends on hardware and the operating system.'];
     if (key === 'cpu') return system ? [`CPU · ${system.cpu?.toFixed(1) ?? '—'}% load · ${system.cores.length} logical cores`, `${system.cores[0]?.frequencyMhz || '—'} MHz reported clock`, ...system.temperatures.filter(sensor => /cpu|core|package|tctl|tdie|peci|processor/i.test(sensor.label)).slice(0, 2).map(sensor => `${sensor.label}: ${sensor.celsius.toFixed(1)} °C`)] : ['CPU readings require the desktop app'];
+    if (key === 'gpu') return [...gpuDetails(selectedGpu(system, settings.gpuId, time), time), ...(gpu ? pressure.gpus[gpu.id] || [] : [])];
     if (key === 'ram') return system ? [`Memory · ${gib(system.memory.used)} / ${gib(system.memory.total)} GiB used`, `${gib(system.memory.available)} GiB available`] : ['Memory readings require the desktop app'];
     if (key === 'network') return network ? [network.name, `↓ ${rate(network.down)} · ↑ ${rate(network.up)} MiB/s`, `Interface lifetime: ↓ ${gib(network.received)} · ↑ ${gib(network.transmitted)} GiB`, 'Colors show relative activity, not network capacity or congestion.'] : ['No reading for the selected network interface'];
     if (key.startsWith('drive:')) {
@@ -109,26 +115,27 @@
   </header>
 
   <div class="system-row">
-    {#if settings.metrics.cpu}<button class="cpu-module metric-tile" class:under-pressure={pressure.cpu.length > 0} data-hint="cpu" aria-label={`CPU measurement details${pressure.cpu.length ? ', performance pressure' : ''}`} aria-describedby={hoverKey === 'cpu' ? 'metric-tooltip' : undefined}><div class="metric-label"><Icon name="cpu" size={13}/> CPU{#if pressure.cpu.length}<span class="pressure-badge" aria-label="CPU performance pressure">!</span>{/if}</div><Gauge value={snapshot?.cpu ?? null} label="LOAD"/>
+    {#if settings.metrics.cpu}<button class="cpu-module metric-tile" class:under-pressure={pressure.cpu.length > 0} data-hint="cpu" aria-label={`CPU measurement details${pressure.cpu.length ? ', performance pressure' : ''}`} aria-describedby={hoverKey === 'cpu' ? 'metric-tooltip' : undefined}><div class="metric-label"><Icon name="cpu" size={13}/> CPU{#if pressure.cpu.length}<span class="pressure-badge" aria-label="CPU performance pressure">!</span>{/if}</div><Gauge value={snapshot?.cpu ?? null} label="LOAD" {reduced}/>
       {#if expanded}<span class="metric-note">{snapshot?.cores.length || '—'} cores · {snapshot?.cores[0]?.frequencyMhz ? (snapshot.cores[0].frequencyMhz / 1000).toFixed(2) + ' GHz' : 'Clock unavailable'}</span>{/if}
     </button>{/if}
+    {#if settings.metrics.gpu}<button class="gpu-module metric-tile" class:under-pressure={!!gpu && !!pressure.gpus[gpu.id]?.length} data-hint="gpu" aria-label="GPU measurement details" aria-describedby={hoverKey === 'gpu' ? 'metric-tooltip' : undefined}><div class="metric-label"><Icon name="gpu" size={13}/> GPU{#if gpu && pressure.gpus[gpu.id]?.length}<span class="pressure-badge" aria-label="GPU performance pressure">!</span>{/if}</div><Gauge value={gpuValue} label="LOAD" {reduced}/><span class="metric-note">{gpu?.name || 'Adapter unavailable'}</span>{#if expanded}<span class="metric-note">{gpuDetails(gpu, now)[2] || 'Memory unavailable'}</span>{/if}</button>{/if}
     {#if settings.metrics.ram}<button class="ram-module metric-tile" class:under-pressure={pressure.memory.length > 0} data-hint="ram" aria-label={`Memory measurement details${pressure.memory.length ? ', performance pressure' : ''}`} aria-describedby={hoverKey === 'ram' ? 'metric-tooltip' : undefined}><div class="metric-label"><Icon name="ram" size={13}/> MEMORY{#if pressure.memory.length}<span class="pressure-badge" aria-label="Memory performance pressure">!</span>{/if}</div>
       <div class="metric-value" style={`color:${stressColor(ram)}`}>{ram === null ? '—' : ram.toFixed(0)}<span>%</span></div>
-      <div class="meter" role="meter" aria-label="RAM usage" aria-valuenow={ram ?? undefined} aria-valuemin="0" aria-valuemax="100"><span style={`width:${ram || 0}%;background:${stressGradient(ram)}`}></span></div>
+      <div class="meter" role="meter" aria-label="RAM usage" aria-valuenow={ram ?? undefined} aria-valuemin="0" aria-valuemax="100"><span use:displayMeter={{value: ram, reduced}} style={`background:${stressGradient(ram)}`}></span></div>
       <div class="metric-note">{snapshot ? `${gib(snapshot.memory.used)} / ${gib(snapshot.memory.total)} GiB` : 'Unavailable'}</div>
       {#if expanded && snapshot}<div class="metric-note">{gib(snapshot.memory.available)} GiB available</div>{/if}
     </button>{/if}
     {#if settings.metrics.network}<button class="network-module metric-tile" data-hint="network" aria-label="Network measurement details" aria-describedby={hoverKey === 'network' ? 'metric-tooltip' : undefined}><div class="metric-label"><Icon name="network" size={13}/> NETWORK</div>
       <div class="transfer"><span>↓</span><b>{network ? rate(network.down) : '—'}</b><small>MiB/s</small></div>
-      <div class="meter network-down"><span style={`width:${network ? Math.min(100, network.down / scale * 100) : 0}%;background:${stressGradient(network ? network.down / scale * 100 : null)}`}></span></div>
+      <div class="meter network-down"><span use:displayMeter={{value: network ? network.down / scale * 100 : null, reduced}} style={`background:${stressGradient(network ? network.down / scale * 100 : null)}`}></span></div>
       <div class="transfer"><span>↑</span><b>{network ? rate(network.up) : '—'}</b><small>MiB/s</small></div>
-      <div class="meter network-up"><span style={`width:${network ? Math.min(100, network.up / scale * 100) : 0}%;background:${stressGradient(network ? network.up / scale * 100 : null)}`}></span></div>
+      <div class="meter network-up"><span use:displayMeter={{value: network ? network.up / scale * 100 : null, reduced}} style={`background:${stressGradient(network ? network.up / scale * 100 : null)}`}></span></div>
       {#if expanded}<div class="metric-note">{network?.name || 'Select an interface'}</div>{/if}
     </button>{/if}
   </div>
 
   {#if settings.metrics.storage}<div class="storage-strip" aria-label="Selected drive storage usage"><Icon name="storage" size={13}/><div class="storage-items">
-    {#each drives as drive}{@const percent = drivePercent(drive)}<button class="drive-chip" class:drive-full={!!pressure.drives[drive.id]} data-hint={`drive:${drive.id}`} aria-label={`${drive.name} ${drive.mount}: ${percent?.toFixed(0) ?? 'Unknown'} percent used${pressure.drives[drive.id] ? ', low free space' : ''}`} aria-describedby={hoverKey === `drive:${drive.id}` ? 'metric-tooltip' : undefined}><span>{drive.mount || drive.name}</span>{#if pressure.drives[drive.id]}<span class="pressure-badge" aria-label="Low free space">!</span>{/if}<div class="meter"><span style={`width:${percent || 0}%;background:${stressGradient(percent)}`}></span></div><b>{percent?.toFixed(0) ?? '—'}%</b></button>{/each}
+    {#each drives as drive}{@const percent = drivePercent(drive)}<button class="drive-chip" class:drive-full={!!pressure.drives[drive.id]} data-hint={`drive:${drive.id}`} aria-label={`${drive.name} ${drive.mount}: ${percent?.toFixed(0) ?? 'Unknown'} percent used${pressure.drives[drive.id] ? ', low free space' : ''}`} aria-describedby={hoverKey === `drive:${drive.id}` ? 'metric-tooltip' : undefined}><span>{drive.mount || drive.name}</span>{#if pressure.drives[drive.id]}<span class="pressure-badge" aria-label="Low free space">!</span>{/if}<div class="meter"><span use:displayMeter={{value: percent, reduced}} style={`background:${stressGradient(percent)}`}></span></div><b>{percent?.toFixed(0) ?? '—'}%</b></button>{/each}
     {#if !drives.length}<span class="storage-empty">{snapshot ? 'Selected drives are unavailable' : 'Storage unavailable'}</span>{/if}
   </div></div>{/if}
 
@@ -150,13 +157,14 @@
           {#if expanded && quota}<span class="drain-label" class:fast-drain={drain?.fast}>{drain?.fast ? '⚡ Fast drain · ' : ''}{drainText(drain)}</span>{/if}
           {#if expanded && usage?.tokenUsage}<span class="drain-label" class:fast-drain={tokens?.fast}>{tokens ? `${tokens.fast ? '⚡ Token surge · ' : ''}${tokens.perMinute.toFixed(0)} tokens/min avg · ${(tokens.observedSeconds / 60).toFixed(0)} min` : 'Tokens: collecting ≥2 min of readings'}</span>{/if}
         </div>
-        <Gauge value={value} label="LEFT" inverse tone={value === null || status !== 'Current' ? 'unavailable' : severity(value, settings)}/>
+        <Gauge value={value} label="LEFT" {reduced} inverse tone={value === null || status !== 'Current' ? 'unavailable' : severity(value, settings)}/>
       </button>
     {/each}
   </div>{/if}
 
   {#if expanded}
-    {#if settings.metrics.storage}<div class="detail-section drive-details"><div class="detail-title">DRIVE CAPACITY <span>Selected volumes · GiB</span></div>{#each drives as drive}{@const percent = drivePercent(drive)}<div class="drive-detail"><span><b>{drive.name || drive.mount}</b><small>{drive.mount}</small></span><div class="meter"><span style={`width:${percent || 0}%;background:${stressGradient(percent)}`}></span></div><strong>{percent?.toFixed(1) ?? '—'}%</strong><small>{gib(drive.usedBytes)} / {gib(drive.totalBytes)} used · {gib(drive.availableBytes)} free</small></div>{/each}</div>{/if}
+    {#if settings.metrics.gpu}<div class="detail-section gpu-details"><div class="detail-title">GRAPHICS ADAPTERS <span>GPU readings cached · {resources.mode === 'normal' ? 1 : resources.systemSeconds}s</span></div>{#each snapshot?.gpus || [] as adapter}<article class="gpu-detail"><b><Icon name="gpu" size={13}/>{adapter.name}{#if pressure.gpus[adapter.id]?.length}<span class="pressure-badge">!</span>{/if}</b><p>{gpuDetails(adapter, now).slice(1).join(' · ')}</p></article>{/each}{#if !snapshot?.gpus?.length}<p class="metric-note">No graphics adapter reported.</p>{/if}</div>{/if}
+    {#if settings.metrics.storage}<div class="detail-section drive-details"><div class="detail-title">DRIVE CAPACITY <span>Selected volumes · GiB</span></div>{#each drives as drive}{@const percent = drivePercent(drive)}<div class="drive-detail"><span><b>{drive.name || drive.mount}</b><small>{drive.mount}</small></span><div class="meter"><span use:displayMeter={{value: percent, reduced}} style={`background:${stressGradient(percent)}`}></span></div><strong>{percent?.toFixed(1) ?? '—'}%</strong><small>{gib(drive.usedBytes)} / {gib(drive.totalBytes)} used · {gib(drive.availableBytes)} free</small></div>{/each}</div>{/if}
     {#if settings.metrics.cpu}<div class="detail-section"><div class="detail-title">CORE ACTIVITY <span>{snapshot?.temperatures[0] ? `${snapshot.temperatures[0].celsius.toFixed(0)} °C · ${snapshot.temperatures[0].label}` : 'Temperature not reported'}</span></div>
       <div class="core-chart" aria-label="Per-core CPU utilization">
         {#each snapshot?.cores || [] as core, index}<div class="core" title={`Core ${index + 1}: ${core.usage.toFixed(1)}%`}><div class="core-track"><span style={`height:${core.usage}%;background:${stressGradient(core.usage, false, true)}`}></span></div><small>{index + 1}</small></div>{/each}
@@ -171,7 +179,7 @@
     {#if !preview}<div class="detail-section resource-strategy"><div class="detail-title">SMART RESOURCE MODE <span>{settings.resources.adaptive ? resources.mode.toUpperCase() : 'OFF'}</span></div><p>System checks {resources.systemSeconds}s · AI checks {resources.providerSeconds}s{resources.quiet ? ' · motion quieted' : ''}</p>{#each resources.reasons as reason}<p>{reason}</p>{/each}{#each resources.suggestions as suggestion}<p>{suggestion}</p>{/each}</div>{/if}
     {#if settings.metrics.ai}<div class="quota-details">
       {#each shownProviders as usage}{#each usage?.windows || [] as window}
-        <div class="quota-line"><span>{usage?.surface === 'codex' ? 'Codex' : 'Claude'} · {window.label}</span><div class="meter"><span style={`width:${remaining(window.usedPercent)}%;background:${stressGradient(remaining(window.usedPercent), true)}`}></span></div><b>{remaining(window.usedPercent).toFixed(0)}% left</b><small>{countdown(window.resetsAt, now)}</small></div>
+        <div class="quota-line"><span>{usage?.surface === 'codex' ? 'Codex' : 'Claude'} · {window.label}</span><div class="meter"><span use:displayMeter={{value: remaining(window.usedPercent), reduced}} style={`background:${stressGradient(remaining(window.usedPercent), true)}`}></span></div><b>{remaining(window.usedPercent).toFixed(0)}% left</b><small>{countdown(window.resetsAt, now)}</small></div>
         <div class="drain-detail">{drainText(drainTracker.reading(usage!, window, now))} · average of up to 30 min</div>
       {/each}{/each}
     </div>{/if}

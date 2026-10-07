@@ -1,6 +1,6 @@
 [package]
 name = "neon-hud"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local system and AI allowance HUD"
 authors = ["Neon HUD contributors"]
 license = "MIT OR Apache-2.0"
@@ -27,3 +27,4 @@ sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dxgi", "Win32_System_Performance"] }

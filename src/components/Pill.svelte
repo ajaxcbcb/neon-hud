@@ -4,6 +4,8 @@
   import type { Settings, SystemSnapshot, ProviderSnapshot, Surface } from '../lib/model';
   import { selectedNetwork, selectedDrives, drivePercent, gib, rate, remaining, countdown, windowStatus } from '../lib/model';
   import { PressureTracker } from '../lib/pressure';
+  import { displayMeter } from '../lib/display';
+  import { selectedGpu, gpuLoad, gpuDetails } from '../lib/model';
   import { DrainTracker, drainText } from '../lib/drain';
   import { PILL_HEIGHT } from '../lib/layout';
   export let settings: Settings;
@@ -12,6 +14,7 @@
   export let now = Date.now() / 1000;
   export let preview = false;
   export let paused = false;
+  export let reduced = false;
   export let drainTracker = new DrainTracker();
   export let onSettings = () => {};
   export let onExpand = () => {};
@@ -36,8 +39,11 @@
   $: hottestDrive = [...drives].sort((a, b) => (drivePercent(b) || 0) - (drivePercent(a) || 0))[0];
   $: memory = snapshot?.memory.total ? snapshot.memory.used / snapshot.memory.total * 100 : null;
   $: systemStale = !snapshot || now - snapshot.sampledAt > 12;
+  $: gpu = selectedGpu(snapshot, settings.gpuId, now);
+  $: gpuValue = gpuLoad(gpu, now);
   $: cells = [
     ...(settings.metrics.cpu ? [{ id: 'cpu', name: 'CPU', value: systemStale ? '—' : `${snapshot?.cpu?.toFixed(0) ?? '—'}%`, stress: systemStale ? 0 : snapshot?.cpu || 0, warning: pressure.cpu.length > 0, detail: systemStale ? 'Waiting for current CPU readings.' : `${snapshot?.cpu?.toFixed(1) ?? 'Unavailable'}% load · ${snapshot?.cores.length || 0} cores\n${snapshot?.temperatures.length ? snapshot.temperatures.map(t => `${t.label}: ${t.celsius.toFixed(1)} °C`).join(' · ') : 'Temperature sensor unavailable'}\n${pressure.cpu.join(' · ') || 'Click for core meters and graphs.'}` }] : []),
+    ...(settings.metrics.gpu ? [{ id: 'gpu', name: 'GPU', value: gpuValue === null ? '—' : `${gpuValue.toFixed(0)}%`, stress: gpuValue ?? 0, warning: !!gpu && !!pressure.gpus[gpu.id]?.length, detail: [...gpuDetails(gpu, now), ...(settings.gpuId === 'auto' ? ['Automatic · busiest reported adapter'] : []), ...(gpu ? pressure.gpus[gpu.id] || [] : [])].join('\n') }] : []),
     ...(settings.metrics.ram ? [{ id: 'ram', name: 'Memory', value: systemStale ? '—' : `${memory?.toFixed(0) ?? '—'}%`, stress: systemStale ? 0 : memory || 0, warning: pressure.memory.length > 0, detail: snapshot && !systemStale ? `${gib(snapshot.memory.used)} / ${gib(snapshot.memory.total)} GiB used\n${gib(snapshot.memory.available)} GiB available\n${pressure.memory.join(' · ') || 'Click for memory details.'}` : 'Waiting for current memory readings.' }] : []),
     ...(settings.metrics.network ? [{ id: 'network', name: 'Network', value: network && !systemStale ? rate(network.down) : '—', stress: 0, warning: false, detail: network && !systemStale ? `${network.name}\n↓ ${rate(network.down)} MiB/s · ↑ ${rate(network.up)} MiB/s\nReceived ${gib(network.received)} GiB · sent ${gib(network.transmitted)} GiB\nClick for the traffic graph.` : 'Selected network interface unavailable.' }] : []),
     ...(settings.metrics.storage ? [{ id: 'storage', name: 'Storage', value: hottestDrive && !systemStale ? `${drivePercent(hottestDrive)?.toFixed(0) ?? '—'}%` : '—', stress: hottestDrive && !systemStale ? drivePercent(hottestDrive) || 0 : 0, warning: drives.some(d => pressure.drives[d.id]), detail: drives.length && !systemStale ? `Most full selected drive shown · ${drives.length} selected\n${drives.map(d => `${d.name || d.mount}: ${gib(d.usedBytes)} / ${gib(d.totalBytes)} GiB · ${gib(d.availableBytes)} GiB free`).join('\n')}\n${drives.map(d => pressure.drives[d.id]).filter(Boolean).join(' · ')}` : 'Selected drives unavailable.' }] : []),
@@ -69,8 +75,8 @@
   <div class="neon-pill" class:paused>
     <button class="pill-mascot" aria-label="Open meters and graphs" onclick={() => action(onExpand)} onpointerenter={() => hover('')}><span aria-hidden="true">✦</span><i></i><i></i></button>
     <div class="pill-metrics">
-      {#each cells as cell}<button class="pill-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value}. Open details`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(onExpand)}><Icon name={cell.id} size={17}/><b>{cell.value}</b>{#if cell.warning}<span class="pill-badge">!</span>{/if}<span class="pill-track"><i style={`width:${Math.max(4, cell.stress)}%`}></i></span></button>{/each}
-      {#each aiCells as cell}<button class="pill-cell ai-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value} left${cell.question ? '. Question needs attention' : ''}`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(() => onProvider(cell.id))}>{#key cell.attentionKey}<span class:question-jolt={cell.question}><Icon name={cell.id} size={17}/></span>{/key}<b>{cell.value}</b>{#if cell.question || cell.warning || cell.fast}<span class="pill-badge">{cell.question ? '?' : cell.fast ? 'ϟ' : '!'}</span>{/if}<span class="pill-track"><i style={`width:${Math.max(4, cell.stress)}%`}></i></span></button>{/each}
+      {#each cells as cell}<button class="pill-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value}. Open details`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(onExpand)}><Icon name={cell.id} size={17}/><b>{cell.value}</b>{#if cell.warning}<span class="pill-badge">!</span>{/if}<span class="pill-track"><i use:displayMeter={{value: Math.max(4, cell.stress), reduced: reduced || settings.reducedMotion || settings.motion === 'quiet'}}></i></span></button>{/each}
+      {#each aiCells as cell}<button class="pill-cell ai-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value} left${cell.question ? '. Question needs attention' : ''}`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(() => onProvider(cell.id))}>{#key cell.attentionKey}<span class:question-jolt={cell.question}><Icon name={cell.id} size={17}/></span>{/key}<b>{cell.value}</b>{#if cell.question || cell.warning || cell.fast}<span class="pill-badge">{cell.question ? '?' : cell.fast ? 'ϟ' : '!'}</span>{/if}<span class="pill-track"><i use:displayMeter={{value: Math.max(4, cell.stress), reduced: reduced || settings.reducedMotion || settings.motion === 'quiet'}}></i></span></button>{/each}
       {#if !cells.length && !aiCells.length}<span class="pill-empty">tiny chaos ✦</span>{/if}
     </div>
     <button class="pill-more" bind:this={menuButton} aria-label="Quick controls" aria-expanded={menu} onclick={openMenu} onpointerenter={() => hover('')}><span aria-hidden="true">•••</span></button>

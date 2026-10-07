@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeSettings, defaults, countdown, windowStatus, selectedNetwork, selectedDrives, drivePercent, sampleSystem, severity } from './model';
+import { normalizeSettings, defaults, countdown, windowStatus, selectedNetwork, selectedDrives, drivePercent, sampleSystem, severity, selectedGpu, gpuLoad, gpuDetails } from './model';
 describe('settings and measurement boundaries', () => {
   it('keeps startup and notifications off until selected', () => {
     expect(normalizeSettings(null)).toEqual(defaults);
@@ -39,5 +39,28 @@ describe('settings and measurement boundaries', () => {
     expect(drivePercent(drive)).toBeCloseTo(59.765625);
     expect(drivePercent({ ...drive, totalBytes: 0 })).toBeNull();
     expect(drivePercent({ ...drive, usedBytes: drive.totalBytes * 2 })).toBe(100);
+  });
+});
+
+describe('GPU identity and capability boundaries', () => {
+  const gpu = { ...sampleSystem.gpus![0], sampledAt: 100 };
+  it('selects the busiest fresh adapter or the exact saved adapter without fallback', () => {
+    const snapshot = { ...sampleSystem, gpus: [gpu, { ...gpu, id: 'second', name: 'Discrete GPU', utilizationPercent: 91 }, { ...gpu, id: 'old', sampledAt: 1, utilizationPercent: 100 }] };
+    expect(selectedGpu(snapshot, 'auto', 100)?.id).toBe('second');
+    expect(selectedGpu(snapshot, gpu.id, 100)?.id).toBe(gpu.id);
+    expect(selectedGpu(snapshot, 'disconnected', 100)).toBeUndefined();
+    expect(selectedGpu(null, 'auto', 100)).toBeUndefined();
+  });
+  it('keeps unsupported, nonfinite, future and stale readings unavailable', () => {
+    expect(gpuLoad({ ...gpu, utilizationPercent: 150 }, 100)).toBe(100);
+    for (const bad of [{ ...gpu, utilizationPercent: null }, { ...gpu, utilizationPercent: NaN }, { ...gpu, sampledAt: 87 }, { ...gpu, sampledAt: 106 }, { ...gpu, status: 'unavailable' as const }]) expect(gpuLoad(bad, 100)).toBeNull();
+    expect(gpuDetails({ ...gpu, sampledAt: 1 }, 100).join()).toContain('Stale');
+    expect(gpuDetails({ ...gpu, memoryUsedBytes: null, temperatureCelsius: null }, 100).join()).toContain('unavailable');
+  });
+  it('migrates old preferences and constrains polling, adapter and threshold values', () => {
+    const old = normalizeSettings({ metrics: { cpu: false }, resources: { adaptive: false } });
+    expect(old.metrics.gpu).toBe(true); expect(old.gpuId).toBe('auto');
+    expect(old.resources).toEqual({ adaptive: false, samplingMs: 250 });
+    expect(normalizeSettings({ gpuId: ' ', resources: { samplingMs: 16 }, performance: { gpuPercent: 999 } })).toMatchObject({ gpuId: 'auto', resources: { samplingMs: 250 }, performance: { gpuPercent: 100 } });
   });
 });

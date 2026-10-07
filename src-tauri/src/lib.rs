@@ -1,5 +1,6 @@
 mod bridge;
 mod codex;
+mod gpu;
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -121,6 +122,8 @@ struct Settings {
     metrics: Metrics,
     #[serde(default)]
     storage_drive_ids: Vec<String>,
+    #[serde(default = "default_gpu_id")]
+    gpu_id: String,
     #[serde(default)]
     performance: Performance,
     #[serde(default)]
@@ -132,9 +135,20 @@ struct Settings {
 fn default_motion() -> String {
     "chaotic".into()
 }
+fn default_gpu_id() -> String {
+    "auto".into()
+}
+fn default_sampling_ms() -> u64 {
+    250
+}
+fn default_gpu_threshold() -> f64 {
+    90.0
+}
 #[derive(Clone, Serialize, Deserialize)]
 struct Metrics {
     cpu: bool,
+    #[serde(default = "default_true")]
+    gpu: bool,
     ram: bool,
     network: bool,
     ai: bool,
@@ -148,6 +162,8 @@ fn default_true() -> bool {
 #[serde(rename_all = "camelCase")]
 struct Performance {
     cpu_percent: f64,
+    #[serde(default = "default_gpu_threshold")]
+    gpu_percent: f64,
     memory_percent: f64,
     temperature_celsius: f64,
     storage_percent: f64,
@@ -156,6 +172,7 @@ impl Default for Performance {
     fn default() -> Self {
         Self {
             cpu_percent: 90.0,
+            gpu_percent: 90.0,
             memory_percent: 90.0,
             temperature_celsius: 85.0,
             storage_percent: 90.0,
@@ -166,10 +183,15 @@ impl Default for Performance {
 struct Resources {
     #[serde(default = "default_true")]
     adaptive: bool,
+    #[serde(default = "default_sampling_ms", rename = "samplingMs")]
+    sampling_ms: u64,
 }
 impl Default for Resources {
     fn default() -> Self {
-        Self { adaptive: true }
+        Self {
+            adaptive: true,
+            sampling_ms: default_sampling_ms(),
+        }
     }
 }
 impl Default for Settings {
@@ -194,12 +216,14 @@ impl Default for Settings {
             critical: 10.0,
             metrics: Metrics {
                 cpu: true,
+                gpu: true,
                 ram: true,
                 network: true,
                 ai: true,
                 storage: true,
             },
             storage_drive_ids: vec![],
+            gpu_id: default_gpu_id(),
             performance: Performance::default(),
             resources: Resources::default(),
             codex_enabled: false,
@@ -271,6 +295,12 @@ fn normalize_settings(settings: &mut Settings) {
     settings.storage_drive_ids.sort();
     settings.storage_drive_ids.dedup();
     settings.storage_drive_ids.truncate(64);
+    if settings.gpu_id.trim().is_empty() || settings.gpu_id.len() > 1024 {
+        settings.gpu_id = default_gpu_id();
+    }
+    if ![250, 500, 1000, 2000].contains(&settings.resources.sampling_ms) {
+        settings.resources.sampling_ms = default_sampling_ms();
+    }
     fn bounded(value: f64, min: f64, max: f64, fallback: f64) -> f64 {
         if value.is_finite() {
             value.clamp(min, max)
@@ -279,6 +309,7 @@ fn normalize_settings(settings: &mut Settings) {
         }
     }
     settings.performance.cpu_percent = bounded(settings.performance.cpu_percent, 50.0, 100.0, 90.0);
+    settings.performance.gpu_percent = bounded(settings.performance.gpu_percent, 50.0, 100.0, 90.0);
     settings.performance.memory_percent =
         bounded(settings.performance.memory_percent, 50.0, 100.0, 90.0);
     settings.performance.storage_percent =
@@ -307,6 +338,12 @@ mod settings_tests {
         root.remove("storageDriveIds");
         root.remove("performance");
         root.remove("resources");
+        root.remove("gpuId");
+        root.get_mut("metrics")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("gpu");
         root.get_mut("metrics")
             .unwrap()
             .as_object_mut()
@@ -317,16 +354,26 @@ mod settings_tests {
         assert!(restored.storage_drive_ids.is_empty());
         assert_eq!(restored.performance.temperature_celsius, 85.0);
         assert!(restored.resources.adaptive);
+        assert!(restored.metrics.gpu);
+        assert_eq!(restored.gpu_id, "auto");
+        assert_eq!(restored.resources.sampling_ms, 250);
+        assert_eq!(restored.performance.gpu_percent, 90.0);
     }
     #[test]
     fn performance_thresholds_and_drive_ids_are_bounded() {
         let mut settings = Settings::default();
+        settings.resources.sampling_ms = 1;
+        settings.gpu_id = " ".into();
+        settings.performance.gpu_percent = f64::NAN;
         settings.performance.cpu_percent = 12.0;
         settings.performance.memory_percent = f64::NAN;
         settings.performance.storage_percent = 125.0;
         settings.performance.temperature_celsius = 200.0;
         settings.storage_drive_ids = vec!["C:\\".into(), "C:\\".into(), "".into()];
         normalize_settings(&mut settings);
+        assert_eq!(settings.resources.sampling_ms, 250);
+        assert_eq!(settings.gpu_id, "auto");
+        assert_eq!(settings.performance.gpu_percent, 90.0);
         assert_eq!(settings.performance.cpu_percent, 50.0);
         assert_eq!(settings.performance.memory_percent, 90.0);
         assert_eq!(settings.performance.storage_percent, 100.0);
@@ -354,33 +401,76 @@ mod settings_tests {
         );
     }
     #[test]
+    fn additive_gpu_preferences_preserve_existing_resource_settings() {
+        let mut old = serde_json::to_value(Settings::default()).unwrap();
+        old["resources"]
+            .as_object_mut()
+            .unwrap()
+            .remove("samplingMs");
+        old["resources"]["adaptive"] = serde_json::json!(false);
+        old["performance"]
+            .as_object_mut()
+            .unwrap()
+            .remove("gpuPercent");
+        let restored: Settings = serde_json::from_value(old).unwrap();
+        assert!(!restored.resources.adaptive);
+        assert_eq!(restored.resources.sampling_ms, 250);
+        assert_eq!(restored.performance.gpu_percent, 90.0);
+        assert_eq!(
+            ResourceMode::Normal.system_interval(250),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            ResourceMode::Normal.system_interval(1),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            ResourceMode::Pressure.system_interval(250),
+            Duration::from_secs(4)
+        );
+        assert_eq!(
+            ResourceMode::Critical.system_interval(250),
+            Duration::from_secs(8)
+        );
+        assert_eq!(ResourceMode::Normal.gpu_interval(), Duration::from_secs(1));
+        assert_eq!(
+            ResourceMode::Critical.sensor_interval(),
+            Duration::from_secs(8)
+        );
+    }
+    #[test]
     fn background_monitor_keeps_sampling_across_resource_modes() {
         let monitor = SystemMonitor::new();
-        let first = monitor.snapshot(ResourceMode::Normal).unwrap();
+        let first = monitor.snapshot(ResourceMode::Normal, 250).unwrap();
         assert!(first.memory.total > 0);
         assert!(first.cpu.is_none());
-        let next = monitor.snapshot(ResourceMode::Critical).unwrap();
+        let cached = monitor.snapshot(ResourceMode::Normal, 250).unwrap();
+        assert_eq!(cached.sampled_at, first.sampled_at);
+        thread::sleep(Duration::from_millis(275));
+        let next = monitor.snapshot(ResourceMode::Normal, 250).unwrap();
         assert!(next.sampled_at >= first.sampled_at);
         assert!(next
             .cpu
             .is_some_and(|usage| usage.is_finite() && (0.0..=100.0).contains(&usage)));
         assert!(!next.cores.is_empty());
+        let pressure_cache = monitor.snapshot(ResourceMode::Critical, 250).unwrap();
+        assert_eq!(pressure_cache.sampled_at, next.sampled_at);
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Core {
     usage: f32,
     frequency_mhz: u64,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Memory {
     used: u64,
     total: u64,
     available: u64,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Network {
     name: String,
     down: f64,
@@ -388,7 +478,7 @@ struct Network {
     received: u64,
     transmitted: u64,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Temperature {
     label: String,
     celsius: f32,
@@ -403,7 +493,7 @@ struct Drive {
     available_bytes: u64,
     used_bytes: u64,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SystemSnapshot {
     sampled_at: f64,
@@ -414,6 +504,7 @@ struct SystemSnapshot {
     default_interface: Option<String>,
     temperatures: Vec<Temperature>,
     drives: Vec<Drive>,
+    gpus: Vec<gpu::GpuSnapshot>,
 }
 struct SystemState {
     system: System,
@@ -425,6 +516,11 @@ struct SystemState {
     route_last: Option<Instant>,
     route_cache: Option<String>,
     frequency_last: Option<Instant>,
+    sensors_last: Option<Instant>,
+    gpu: gpu::GpuMonitor,
+    gpu_last: Option<Instant>,
+    gpu_cache: Vec<gpu::GpuSnapshot>,
+    snapshot_cache: Option<SystemSnapshot>,
     last: Option<Instant>,
     totals: HashMap<String, (u64, u64)>,
 }
@@ -463,6 +559,33 @@ impl ResourceMode {
             Self::Critical => 60,
         })
     }
+    fn system_interval(self, sampling_ms: u64) -> Duration {
+        Duration::from_millis(match self {
+            Self::Normal => {
+                if [250, 500, 1000, 2000].contains(&sampling_ms) {
+                    sampling_ms
+                } else {
+                    250
+                }
+            }
+            Self::Pressure => 4000,
+            Self::Critical => 8000,
+        })
+    }
+    fn gpu_interval(self) -> Duration {
+        Duration::from_secs(match self {
+            Self::Normal => 1,
+            Self::Pressure => 4,
+            Self::Critical => 8,
+        })
+    }
+    fn sensor_interval(self) -> Duration {
+        Duration::from_secs(match self {
+            Self::Normal => 2,
+            Self::Pressure => 4,
+            Self::Critical => 8,
+        })
+    }
 }
 impl SystemState {
     fn new() -> Self {
@@ -480,11 +603,26 @@ impl SystemState {
             route_last: None,
             route_cache: None,
             frequency_last: None,
+            sensors_last: None,
+            gpu: gpu::GpuMonitor::new(),
+            gpu_last: None,
+            gpu_cache: Vec::new(),
+            snapshot_cache: None,
             last: None,
             totals: HashMap::new(),
         }
     }
-    fn snapshot(&mut self, mode: ResourceMode) -> SystemSnapshot {
+    fn snapshot(&mut self, mode: ResourceMode, sampling_ms: u64) -> SystemSnapshot {
+        // Extra UI/manual requests return the same timestamped reading. They cannot
+        // bypass the sampling budget or turn cached GPU data into fresh telemetry.
+        if self
+            .last
+            .is_some_and(|last| last.elapsed() < mode.system_interval(sampling_ms))
+        {
+            if let Some(snapshot) = &self.snapshot_cache {
+                return snapshot.clone();
+            }
+        }
         let frequency_due = self
             .frequency_last
             .is_none_or(|last| last.elapsed() >= mode.frequency_interval());
@@ -496,7 +634,20 @@ impl SystemState {
         self.system.refresh_cpu_specifics(cpu_kind);
         self.system.refresh_memory();
         self.networks.refresh(true);
-        self.components.refresh(true);
+        if self
+            .sensors_last
+            .is_none_or(|last| last.elapsed() >= mode.sensor_interval())
+        {
+            self.components.refresh(true);
+            self.sensors_last = Some(Instant::now());
+        }
+        if self
+            .gpu_last
+            .is_none_or(|last| last.elapsed() >= mode.gpu_interval())
+        {
+            self.gpu_cache = self.gpu.refresh(now());
+            self.gpu_last = Some(Instant::now());
+        }
         if self
             .drives_last
             .is_none_or(|last| last.elapsed() >= mode.disk_interval())
@@ -565,7 +716,7 @@ impl SystemState {
             .route_cache
             .clone()
             .filter(|name| networks.iter().any(|n| &n.name == name));
-        SystemSnapshot {
+        let snapshot = SystemSnapshot {
             sampled_at: now(),
             cpu: elapsed.map(|_| self.system.global_cpu_usage()),
             cores: self
@@ -595,34 +746,40 @@ impl SystemState {
                 })
                 .collect(),
             drives: self.drive_cache.clone(),
-        }
+            gpus: self.gpu_cache.clone(),
+        };
+        self.snapshot_cache = Some(snapshot.clone());
+        snapshot
     }
 }
 #[derive(Clone)]
 struct SystemMonitor {
-    requests: SyncSender<(ResourceMode, Sender<SystemSnapshot>)>,
+    requests: SyncSender<(ResourceMode, u64, Sender<SystemSnapshot>)>,
 }
 impl SystemMonitor {
     fn new() -> Self {
-        let (requests, receiver) = mpsc::sync_channel::<(ResourceMode, Sender<SystemSnapshot>)>(1);
+        let (requests, receiver) =
+            mpsc::sync_channel::<(ResourceMode, u64, Sender<SystemSnapshot>)>(1);
         std::thread::Builder::new()
             .name("neon-hud-monitor".into())
             .spawn(move || {
                 // Windows temperature sensors initialize MTA COM. Keep their creation,
                 // refresh and destruction on this thread, away from the STA UI thread.
                 let mut state = None;
-                while let Ok((mode, response)) = receiver.recv() {
-                    let snapshot = state.get_or_insert_with(SystemState::new).snapshot(mode);
+                while let Ok((mode, sampling_ms, response)) = receiver.recv() {
+                    let snapshot = state
+                        .get_or_insert_with(SystemState::new)
+                        .snapshot(mode, sampling_ms);
                     let _ = response.send(snapshot);
                 }
             })
             .expect("Could not start system monitor");
         Self { requests }
     }
-    fn snapshot(&self, mode: ResourceMode) -> Result<SystemSnapshot, String> {
+    fn snapshot(&self, mode: ResourceMode, sampling_ms: u64) -> Result<SystemSnapshot, String> {
         let (response, receiver) = mpsc::channel();
         self.requests
-            .try_send((mode, response))
+            .try_send((mode, sampling_ms, response))
             .map_err(|error| format!("System monitor unavailable or busy: {error}"))?;
         receiver
             .recv_timeout(Duration::from_secs(15))
@@ -633,10 +790,11 @@ impl SystemMonitor {
 async fn system_snapshot(
     app: AppHandle,
     resource_mode: Option<String>,
+    sampling_ms: Option<u64>,
 ) -> Result<SystemSnapshot, String> {
     let monitor = app.state::<SystemMonitor>().inner().clone();
     let mode = ResourceMode::parse(resource_mode.as_deref());
-    tauri::async_runtime::spawn_blocking(move || monitor.snapshot(mode))
+    tauri::async_runtime::spawn_blocking(move || monitor.snapshot(mode, sampling_ms.unwrap_or(250)))
         .await
         .map_err(|error| format!("System monitor task failed: {error}"))?
 }
@@ -865,6 +1023,7 @@ pub fn run() {
                     "show" | "configure" => {
                         if let Some(win) = app.get_webview_window("main") {
                             let _ = win.show();
+                            let _ = win.emit("hud-visible", true);
                             let _ = win.set_focus();
                             if event.id().as_ref() == "configure" {
                                 let _ = win.emit("open-settings", ());
@@ -883,6 +1042,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                let _ = window.emit("hud-visible", false);
             }
         })
         .invoke_handler(tauri::generate_handler![
