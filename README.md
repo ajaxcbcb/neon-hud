@@ -2,7 +2,7 @@
 
 A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
 
-[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.3.md)
+[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.4.md)
 
 ![Tiny pill HUD showing sample readings](docs/assets/pill.png)
 

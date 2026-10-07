@@ -11,6 +11,14 @@ describe('settings and measurement boundaries', () => {
     expect(value.theme).toBe('circuit'); expect(value.opacity).toBe(.85);
     expect(value.textScale).toBe(1.15); expect(value.critical).toBe(5); expect(value.completed).toBe(false);
   });
+  it('preserves compression and custom placement while migrating old profiles', () => {
+    expect(normalizeSettings({ completed: true }).windowPosition).toBeNull();
+    const saved = { size: 'compressed', windowPosition: { x: 125.5, y: -40, monitor: 'External' } };
+    expect(normalizeSettings(JSON.parse(JSON.stringify(saved)))).toMatchObject(saved);
+    for (const windowPosition of [null, 'bad', { x: NaN, y: 5 }, { x: 1, y: Infinity }, { x: '4', y: 1 }, { x: 100001, y: 1 }]) {
+      expect(normalizeSettings({ windowPosition }).windowPosition).toBeNull();
+    }
+  });
   it('migrates automatic installation as opt-in and preserves independent update switches', () => {
     expect(normalizeSettings({}).autoInstallUpdates).toBe(false);
     expect(normalizeSettings({ autoInstallUpdates: 'yes' }).autoInstallUpdates).toBe(false);

@@ -18,6 +18,10 @@
   export let drainTracker = new DrainTracker();
   export let onSettings = () => {};
   export let onExpand = () => {};
+  export let onCompress = () => {};
+  export let onResetPosition = () => {};
+  export let onDrag = () => {};
+  export let onMove = (_x: number, _y: number) => {};
   export let onHide = () => {};
   export let onPause = () => {};
   export let onRefresh = () => {};
@@ -26,6 +30,8 @@
   export let onPin = () => {};
   export let onProvider = (_surface: string) => {};
   export let onSpace = (_height: number) => {};
+  export let openLeft = false;
+  export let openUp = false;
   const tracker = new PressureTracker();
   let active = '';
   let menu = false;
@@ -57,8 +63,22 @@
     const attention = providers.attention.filter(a => surface === 'claude' ? ['claude', 'claude-code'].includes(a.surface) : a.surface === surface);
     return { id: surface, name: surface === 'codex' ? 'Codex allowance' : 'Claude allowance', value: current && quota ? `${remaining(quota.usedPercent).toFixed(0)}%` : '—', stress: current && quota ? quota.usedPercent : 0, warning: current && quota ? remaining(quota.usedPercent) <= settings.warning : false, question: attention.length > 0, attentionKey: attention.map(a => a.id).join(','), fast: !!(drain?.fast || tokens?.fast), detail: `${surface === 'codex' ? 'Codex account · ChatGPT chat quota is separate' : 'Claude shared account'}\n${current && quota ? `${remaining(quota.usedPercent).toFixed(1)}% left · ${quota.label}\n${countdown(quota.resetsAt, now)} · ${drainText(drain)}` : usage?.message || 'No supported reading'}\n${usage?.source || 'Local source'}${attention.length ? '\nQuestion needs you · click to view' : ''}` };
   }) : [];
+  $: compressed = settings.size === 'compressed';
+  $: visibleCells = compressed ? [...cells].sort((a, b) => Number(b.warning) - Number(a.warning) || b.stress - a.stress).slice(0, aiCells.length ? 1 : 3) : cells;
   $: detail = [...cells, ...aiCells].find(cell => cell.id === active);
-  $: onSpace(menu ? 328 : detail ? 208 : PILL_HEIGHT);
+  $: height = menu ? 392 : detail ? 208 : PILL_HEIGHT;
+  $: onSpace(height);
+  function moveKey(event: KeyboardEvent) {
+    const step = event.shiftKey ? 1 : 10;
+    const directions: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    if (directions[event.key]) { event.preventDefault(); onMove(...directions[event.key]); }
+  }
+  function drag(event: PointerEvent) {
+    if (event.button !== 0 || preview) return;
+    // Start from the live pointer press; resizing first can miss a quick drag.
+    clearTimeout(closeTimer);
+    onDrag();
+  }
   function hover(id: string) { clearTimeout(closeTimer); if (!menu) active = id; }
   function leave() { clearTimeout(closeTimer); if (!menu) closeTimer = setTimeout(() => active = '', 130); }
   function openMenu() { clearTimeout(closeTimer); active = ''; menu = !menu; if (menu) queueMicrotask(() => shell.querySelector<HTMLButtonElement>('.pill-menu button')?.focus()); }
@@ -71,16 +91,17 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Group delegates context shortcuts for its metric buttons.) -->
-<div class="pill-shell" style={`height:${menu ? 328 : detail ? 208 : PILL_HEIGHT}px`} class:bottom-dock={settings.corner.startsWith('bottom')} class:sample={preview} bind:this={shell} onpointerleave={leave} onpointerenter={() => clearTimeout(closeTimer)} onfocusout={(event) => { if (!shell.contains(event.relatedTarget as Node)) { menu = false; leave(); } }} onkeydown={keys} oncontextmenu={(event) => { event.preventDefault(); if (!menu) openMenu(); }} role="group" aria-label={preview ? 'Sample floating HUD' : 'Floating Neon HUD'}>
+<div class="pill-shell" style={`height:${height}px`} class:compressed class:popover={menu || !!detail} class:right-dock={preview ? settings.corner.endsWith('right') : openLeft} class:bottom-dock={preview ? settings.corner.startsWith('bottom') : openUp} class:sample={preview} bind:this={shell} onpointerleave={leave} onpointerenter={() => clearTimeout(closeTimer)} onfocusout={(event) => { if (!shell.contains(event.relatedTarget as Node)) { menu = false; leave(); } }} onkeydown={keys} oncontextmenu={(event) => { event.preventDefault(); if (!menu) openMenu(); }} role="group" aria-label={preview ? 'Sample floating HUD' : 'Floating Neon HUD'}>
   <div class="neon-pill" class:paused>
-    <button class="pill-mascot" aria-label="Open meters and graphs" onclick={() => action(onExpand)} onpointerenter={() => hover('')}><span aria-hidden="true">✦</span><i></i><i></i></button>
+    <button class="pill-grip" aria-label="Move HUD. Drag, or use arrow keys. Shift moves one pixel." title="Drag to move · arrow keys to nudge" onpointerdown={drag} onkeydown={moveKey}><Icon name="grip" size={12}/></button>
+    {#if !compressed}<button class="pill-mascot" aria-label="Open meters and graphs" onclick={() => action(onExpand)} onpointerenter={() => hover('')}><span aria-hidden="true">✦</span><i></i><i></i></button>{/if}
     <div class="pill-metrics">
-      {#each cells as cell}<button class="pill-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value}. Open details`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(onExpand)}><Icon name={cell.id} size={17}/><b>{cell.value}</b>{#if cell.warning}<span class="pill-badge">!</span>{/if}<span class="pill-track"><i use:displayMeter={{value: Math.max(4, cell.stress), reduced: reduced || settings.reducedMotion || settings.motion === 'quiet'}}></i></span></button>{/each}
+      {#each visibleCells as cell}<button class="pill-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value}. Open details`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(onExpand)}><Icon name={cell.id} size={17}/><b>{cell.value}</b>{#if cell.warning}<span class="pill-badge">!</span>{/if}<span class="pill-track"><i use:displayMeter={{value: Math.max(4, cell.stress), reduced: reduced || settings.reducedMotion || settings.motion === 'quiet'}}></i></span></button>{/each}
       {#each aiCells as cell}<button class="pill-cell ai-cell" class:has-warning={cell.warning} style={`--stress:${Math.round(160 - cell.stress * 1.6)}`} aria-label={`${cell.name}: ${cell.value} left${cell.question ? '. Question needs attention' : ''}`} onpointerenter={() => hover(cell.id)} onfocus={() => hover(cell.id)} onclick={() => action(() => onProvider(cell.id))}>{#key cell.attentionKey}<span class:question-jolt={cell.question}><Icon name={cell.id} size={17}/></span>{/key}<b>{cell.value}</b>{#if cell.question || cell.warning || cell.fast}<span class="pill-badge">{cell.question ? '?' : cell.fast ? 'ϟ' : '!'}</span>{/if}<span class="pill-track"><i use:displayMeter={{value: Math.max(4, cell.stress), reduced: reduced || settings.reducedMotion || settings.motion === 'quiet'}}></i></span></button>{/each}
       {#if !cells.length && !aiCells.length}<span class="pill-empty">tiny chaos ✦</span>{/if}
     </div>
     <button class="pill-more" bind:this={menuButton} aria-label="Quick controls" aria-expanded={menu} onclick={openMenu} onpointerenter={() => hover('')}><span aria-hidden="true">•••</span></button>
   </div>
-  {#if menu}<div class="pill-menu"><header>POCKET CHAOS <span>✦</span></header><button onclick={() => action(onExpand)}><Icon name="expand"/>Meters & graphs</button><button onclick={() => action(onSettings)}><Icon name="settings"/>Settings</button><button onclick={() => action(onPause)}><Icon name="pause"/>{paused ? 'Resume readings' : 'Pause readings'}</button><button onclick={() => action(onRefresh)}><Icon name="network"/>Refresh readings</button><div class="pill-menu-row"><button onclick={onTheme}>Theme ✦</button><button onclick={onMotion}>{settings.motion === 'quiet' ? 'Chaos!' : 'Quiet'}</button><button aria-pressed={settings.alwaysOnTop} onclick={onPin}><Icon name="pin"/>Pin</button></div><button onclick={() => action(onHide)}><Icon name="close"/>Hide to tray</button><small>Escape closes · right click opens</small></div>
+  {#if menu}<div class="pill-menu"><header>POCKET CHAOS <span>✦</span></header><button onclick={() => action(onCompress)}><Icon name="compress"/>{compressed ? 'Uncompress pill' : 'Compress pill'}</button><button onclick={() => action(onExpand)}><Icon name="expand"/>Meters & graphs</button><button onclick={() => action(onResetPosition)}><Icon name="grip"/>Reset position</button><button onclick={() => action(onSettings)}><Icon name="settings"/>Settings</button><button onclick={() => action(onPause)}><Icon name="pause"/>{paused ? 'Resume readings' : 'Pause readings'}</button><button onclick={() => action(onRefresh)}><Icon name="network"/>Refresh readings</button><div class="pill-menu-row"><button onclick={onTheme}>Theme ✦</button><button onclick={onMotion}>{settings.motion === 'quiet' ? 'Chaos!' : 'Quiet'}</button><button aria-pressed={settings.alwaysOnTop} onclick={onPin}><Icon name="pin"/>Pin</button></div><button onclick={() => action(onHide)}><Icon name="close"/>Hide to tray</button><small>Drag the grip · arrows nudge · Escape closes</small></div>
   {:else if detail}<div class="pill-peek" role="status"><header><Icon name={detail.id} size={18}/>{detail.name}<span>↗</span></header><p>{detail.detail}</p>{#if preview}<small>SAMPLE DATA</small>{/if}</div>{/if}
 </div>

@@ -23,6 +23,8 @@
     <image href="/brands/openai.svg" width="24" height="24"/>
   {:else if name === 'settings'}
     <path d="m9 3-.8 2.5-2.5.5-2 3 1.3 2.3-.8 2.4 2 3 2.6-.2L11 19h3l1.8-2.5 2.6.2 2-3-.8-2.4L22 9l-2-3-2.5-.5L16 3Z"/><circle cx="12" cy="11" r="3"/>
+  {:else if name === 'grip'}<circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/>
+  {:else if name === 'compress'}<path d="M3 8h5V3m8 0v5h5M3 16h5v5m8 0v-5h5"/>
   {:else if name === 'expand'}<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>
   {:else if name === 'close'}<path d="m6 6 12 12M6 18 18 6"/>
   {:else if name === 'check'}<path d="m5 12 4 4L19 6"/>

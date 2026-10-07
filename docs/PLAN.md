@@ -4,12 +4,13 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: v0.1.3 public preview and signed updater packages verified and installed on Windows. Active profile choices and both enabled update preferences survived relaunch. Minimize hid the window without ending monitoring or leaving a named taskbar entry; own-window restoration passed. 63 frontend tests, 29 Windows and 26 Mac tests, frontend checks/build/audit/formatting and independent review passed. Actual tray-menu restoration and strict single-process operation remain open. Priority P1.
+Status: v0.1.4 dragging/compression source is implemented; cloud validation and final review are next. Installed v0.1.3 and its enabled update preferences remain preserved. Local heavy validation/runtime installation awaits resource admission. Actual tray-menu restoration and strict single-process operation remain open. Priority P1.
 
-Next: Verify actual tray-menu restoration/Quit and profile parity when launched outside the Windows packaged host. Resolve strict single-process connector and updater constraints before replacing the WebView renderer. Observe the next automatic upgrade when a newer verified release exists. GPU accuracy/frame rate and full-process resource measurements remain separate checks.
+Next: Verify drag/compression in existing cloud frontend and Windows/Mac CI, then inspect and install only with fresh runtime admission. Do not activate the automatic-update manifest before replacement gates. Verify actual tray-menu restoration/Quit and profile parity outside the Windows packaged host. Native connector/updater feasibility, GPU accuracy/frame rate and full-process resource measurements remain separate checks.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
+| Dragging and compression | Coordinator | Final source review | Light source / cloud CI | Implemented; geometry/profile checks and packages pending; installed0.1.3 unchanged |
 | GPU provider and recovery | Backend worker / coordinator | Independent review | Source write | Complete; review findings resolved |
 | Frontend integration | Coordinator | GPU contract | Light local | Complete; 63 tests, zero check warnings/errors, build and audit |
 | Native tests and packages | GitHub CI | Source integration | Cloud | Complete; source 44b579e2, 29 Windows / 26 Mac tests, signed payloads and Windows launch/minimize |

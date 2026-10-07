@@ -2,6 +2,8 @@
 
 A tiny, interactive desktop instrument panel that stays out of your way. Start with **Appearance**, choose your neon atmosphere, connect optional AI sources, then set the measurements you want. The default 280 × 56 HUD is a floating side pill and can hide to the system tray or Mac menu bar. Hover reveals measurements and right-click opens quick controls; click opens the full meters and graphs.
 
+Drag the six-dot grip to move the pill, or focus it and use arrow keys to nudge (Shift for one pixel). Its position saves with your profile. Right-click **Compress pill** for a 160 × 56 window showing the most stressed system metric and enabled AI allowance icons. **Uncompress pill** restores the full pill; **Reset position** returns to the selected screen corner. The first configuration page also offers the compressed size.
+
 ## Read your machine at a glance
 
 CPU and GPU speedometers, memory bar, upload/download rates and selected-drive capacity share a compact layout. Expand for per-core activity, 60-second traffic history, full drive measurements and provider windows. Percentages, GiB, MiB/s, GHz and reported °C accompany the visuals.

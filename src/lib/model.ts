@@ -5,7 +5,8 @@ export interface Settings {
   completed: boolean;
   step: number;
   theme: Theme;
-  size: 'compact' | 'expanded';
+  size: 'compressed' | 'compact' | 'expanded';
+  windowPosition: { x: number; y: number; monitor: string | null } | null;
   corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'middle-left' | 'middle-right';
   monitor: number;
   alwaysOnTop: boolean;
@@ -83,7 +84,7 @@ export interface Attention {
 export interface ProviderSnapshot { usages: Usage[]; attention: Attention[]; claudeBridgeEnabled?: boolean; }
 export const defaults: Settings = {
   version: 1, completed: false, step: 1, theme: 'circuit', size: 'compact',
-  corner: 'middle-right', monitor: 0, alwaysOnTop: true, opacity: 1, textScale: 1,
+  corner: 'middle-right', monitor: 0, windowPosition: null, alwaysOnTop: true, opacity: 1, textScale: 1,
   reducedMotion: false, motion: 'chaotic', launchAtLogin: false, notifications: false, interface: 'auto',
   warning: 20, critical: 10, metrics: { cpu: true, gpu: true, ram: true, network: true, storage: true, ai: true },
   storageDriveIds: [], gpuId: 'auto',
@@ -100,7 +101,11 @@ export function normalizeSettings(value: unknown): Settings {
   result.resources.samplingMs = [250, 500, 1000, 2000].includes(result.resources.samplingMs) ? result.resources.samplingMs : 250;
   result.gpuId = typeof result.gpuId === 'string' && result.gpuId.trim().length > 0 && result.gpuId.length <= 1024 ? result.gpuId : 'auto';
   if (!['circuit', 'cyberpunk', 'aurora'].includes(result.theme)) result.theme = defaults.theme;
-  if (!['compact', 'expanded'].includes(result.size)) result.size = defaults.size;
+  if (!['compressed', 'compact', 'expanded'].includes(result.size)) result.size = defaults.size;
+  const position = input.windowPosition;
+  result.windowPosition = position && typeof position === 'object' && Number.isFinite(position.x) && Number.isFinite(position.y)
+    && Math.abs(position.x) <= 100000 && Math.abs(position.y) <= 100000
+    ? { x: position.x, y: position.y, monitor: typeof position.monitor === 'string' && position.monitor.length <= 1024 ? position.monitor : null } : null;
   if (!['chaotic', 'playful', 'quiet'].includes(result.motion)) result.motion = defaults.motion;
   if (!['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right'].includes(result.corner)) result.corner = defaults.corner;
   const clamp = (n: number, low: number, high: number, fallback: number) => Number.isFinite(n) ? Math.min(high, Math.max(low, n)) : fallback;

@@ -15,7 +15,7 @@
 
   import Hud from './components/Hud.svelte';
   import Pill from './components/Pill.svelte';
-  import { windowSize, dockPosition, PILL_HEIGHT } from './lib/layout';
+  import { windowSize, floatingPosition, rememberPosition, displayIndexAt, displayIndex, popoverDirection, isPill, PILL_HEIGHT, type DisplayArea } from './lib/layout';
   import { idleAttempt, runConnection, connectionView } from './lib/connections';
   import { createRefreshQueue } from './lib/refresh';
   import { createPoller } from './lib/polling';
@@ -37,7 +37,7 @@
 
   let loaded = false;
   let settingsLoaded = false;
-  let appVersion = '0.1.3';
+  let appVersion = '0.1.4';
   let updateStatus: UpdateStatus = { phase: native ? 'idle' : 'preview', message: native ? 'Updates are checked automatically.' : 'Updates are available in the installed app.' };
   let updateReadyAt = 0;
   let lastInteraction = Date.now();
@@ -109,6 +109,14 @@
   $: connecting = codexAttempt.phase === 'pending' || bridgeAttempt.phase === 'pending';
   let pillHeight = PILL_HEIGHT;
   let windowQueue: Promise<void> = Promise.resolve();
+  let placingWindow = false;
+  let expectedPosition: { x: number; y: number } | null = null;
+  let pendingMove = false;
+  let moveTimer: ReturnType<typeof setTimeout> | undefined;
+  let moveQueue: Promise<void> = Promise.resolve();
+  let placedSettings: Settings = structuredClone(defaults);
+  let placedPopover = false;
+  let placedDirection = { left: false, up: false };
   let windowVisible = true;
   let documentHidden = document.hidden;
   let systemPoller: ReturnType<typeof createPoller> | undefined;
@@ -149,6 +157,7 @@
   }
   async function flushSettings() {
     if (!settingsLoaded) throw new Error('Saved profile is unavailable');
+    await capturePendingMove();
     await settingsWriter.flush(() => normalizeSettings(settings));
   }
   async function quit() {
@@ -165,10 +174,41 @@
 
   async function applyWindow() {
     if (!native) return;
+    await capturePendingMove();
     windowQueue = windowQueue.catch(() => {}).then(resizeWindow);
     return windowQueue;
   }
+  async function displayAreas(): Promise<DisplayArea[]> {
+    return (await availableMonitors()).map(m => ({ name: m.name, scaleFactor: m.scaleFactor,
+      area: { x: m.workArea.position.x, y: m.workArea.position.y, width: m.workArea.size.width, height: m.workArea.size.height } }));
+  }
+  async function capturePendingMove() {
+    clearTimeout(moveTimer);
+    if (pendingMove) {
+      pendingMove = false;
+      moveQueue = moveQueue.catch(() => {}).then(async () => {
+        if (configure || stop || !settingsLoaded) return;
+        const win = getCurrentWindow();
+        const [point, size, displays] = await Promise.all([win.outerPosition(), win.outerSize(), displayAreas()]);
+        if (configure || stop || placingWindow) return;
+        settings.windowPosition = rememberPosition(point, displays, placedSettings, size, placedPopover, placedDirection);
+        const index = displayIndexAt(point, displays, size);
+        if (index >= 0) settings.monitor = index;
+      });
+    }
+    await moveQueue;
+  }
+  function moved(point: { x: number; y: number }) {
+    if (configure || placingWindow || !settingsLoaded || stop) return;
+    if (expectedPosition && point.x === expectedPosition.x && point.y === expectedPosition.y) return;
+    expectedPosition = null;
+    pendingMove = true;
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => void capturePendingMove().catch(() => error = 'The HUD position could not be saved. Try moving it again.'), 200);
+  }
   async function resizeWindow() {
+    placingWindow = true;
+    try {
     const win = getCurrentWindow();
     const dimensions = windowSize(settings, configure, !!providerDetail, pillHeight);
     await win.setAlwaysOnTop(configure ? false : settings.alwaysOnTop);
@@ -178,22 +218,41 @@
     await win.setSize(new LogicalSize(dimensions.width, dimensions.height));
     if (configure) { await win.center(); return; }
 
-    const displays = await availableMonitors();
-
-    const monitor = displays[settings.monitor] || displays[0];
-
-    if (!monitor) return;
-
-    const area = monitor.workArea;
-
+    const displays = await displayAreas();
     const size = await win.outerSize();
-
-    const position = dockPosition(settings.corner, { x: area.position.x, y: area.position.y, width: area.size.width, height: area.size.height }, size, monitor.scaleFactor, settings.size === 'compact' && !providerDetail, settings.textScale);
-    await win.setPosition(new PhysicalPosition(position.x, position.y));
+    placedSettings = structuredClone(settings);
+    placedPopover = isPill(settings) && !providerDetail && pillHeight > PILL_HEIGHT;
+    placedDirection = popoverDirection(settings, displays);
+    const position = floatingPosition(settings, displays, size, placedPopover);
+    if (position) {
+      expectedPosition = position;
+      await win.setPosition(new PhysicalPosition(position.x, position.y));
+    }
+    } finally { placingWindow = false; }
   }
-  function resizePill(height: number) { if (pillHeight === height) return; pillHeight = height; if (!configure && !providerDetail && settings.size === 'compact') void applyWindow().catch(() => error = 'The HUD window could not be resized. Reopen it from the tray.'); }
+  function resizePill(height: number) { if (pillHeight === height) return; pillHeight = height; if (!configure && !providerDetail && isPill(settings)) void applyWindow().catch(() => error = 'The HUD window could not be resized. Reopen it from the tray.'); }
 
-  async function openConfiguration() { configure = true; providerDetail = null; settings.step = 1; await applyWindow(); }
+  async function dragHud() {
+    if (!native) { notice = 'Drag the grip in the installed desktop app.'; return; }
+    try { await getCurrentWindow().startDragging(); }
+    catch { error = 'The HUD could not be moved. Try the grip again.'; }
+  }
+  async function nudgeHud(x: number, y: number) {
+    if (!native) return;
+    try {
+      pendingMove = true;
+      await capturePendingMove();
+      if (settings.windowPosition) {
+        const displays = await displayAreas();
+        const scale = displays[displayIndex(settings, displays)]?.scaleFactor || 1;
+        settings.windowPosition = { ...settings.windowPosition, x: settings.windowPosition.x + x / scale, y: settings.windowPosition.y + y / scale };
+        await applyWindow();
+      }
+    } catch { error = 'The HUD could not be moved. Try the grip again.'; }
+  }
+  async function resetPosition() { await capturePendingMove(); settings.windowPosition = null; await applyWindow(); }
+
+  async function openConfiguration() { await capturePendingMove(); configure = true; providerDetail = null; settings.step = 1; await applyWindow(); }
 
   async function finish() {
 
@@ -331,13 +390,14 @@
   function togglePause() { paused = !paused; }
   function refreshNow() { void refreshSystem(true); void refreshProviders(true); }
 
-  async function toggleSize() { settings.size = settings.size === 'compact' ? 'expanded' : 'compact'; await applyWindow(); }
+  async function toggleSize() { await capturePendingMove(); settings.size = isPill(settings) ? 'expanded' : 'compact'; await applyWindow(); }
+  async function toggleCompression() { await capturePendingMove(); settings.size = settings.size === 'compressed' ? 'compact' : 'compressed'; await applyWindow(); }
 
   function setVisible(visible: boolean) { windowVisible = visible; window.dispatchEvent(new CustomEvent('neon-visibility', { detail: visible })); if (visible) void applyWindow().catch(() => error = 'The window could not be restored. Reopen it from the tray.'); }
   async function hide() { if (native) { await getCurrentWindow().hide(); setVisible(false); } else notice = 'The desktop app hides to the system tray or menu bar.'; }
 
   async function showProvider(surface: string) {
-
+    await capturePendingMove();
     providerDetail = surface as Surface;
 
     if (!configure) await applyWindow();
@@ -370,6 +430,7 @@
         cleanups.push(await listen<boolean>('hud-visible', event => setVisible(event.payload)));
 
         cleanups.push(await getCurrentWindow().onCloseRequested(async event => { event.preventDefault(); await hide(); }));
+        cleanups.push(await getCurrentWindow().onMoved(event => moved(event.payload)));
 
         if (settings.codexEnabled) invoke('connect_codex', { login: false }).catch(() => {});
 
@@ -420,13 +481,13 @@
     document.addEventListener('pointerdown', interaction, true);
     document.addEventListener('keydown', interaction, true);
 
-    return () => { stop = true; systemPoller?.destroy(); providerPoller?.destroy(); settingsWriter.destroy(); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); document.removeEventListener('pointerdown', interaction, true); document.removeEventListener('keydown', interaction, true); };
+    return () => { stop = true; clearTimeout(moveTimer); systemPoller?.destroy(); providerPoller?.destroy(); settingsWriter.destroy(); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); document.removeEventListener('pointerdown', interaction, true); document.removeEventListener('keydown', interaction, true); };
 
   });
 
 </script>
 
-<main use:mischief={{ mode: effectiveMotion, reduced: settings.reducedMotion }} data-theme={settings.theme} data-motion={effectiveMotion} data-resource-mode={resources.mode} class:pill-window={loaded && !configure && !providerDetail && settings.size === 'compact'} class:reduced-motion={settings.reducedMotion} class:configuration={configure} style={`--panel-opacity:${settings.opacity};--text-scale:${settings.textScale}`}>
+<main use:mischief={{ mode: effectiveMotion, reduced: settings.reducedMotion }} data-theme={settings.theme} data-motion={effectiveMotion} data-resource-mode={resources.mode} class:pill-window={loaded && !configure && !providerDetail && isPill(settings)} class:reduced-motion={settings.reducedMotion} class:configuration={configure} style={`--panel-opacity:${settings.opacity};--text-scale:${settings.textScale}`}>
 
   {#if !loaded}<div class="loading">Starting Neon HUD…</div>
 
@@ -458,15 +519,15 @@
 
           </fieldset>
 
-          <fieldset class="motion-picker"><legend>How much mischief?</legend><div class="motion-options">{#each [{id:'quiet',label:'Quiet',icon:'orbit'},{id:'playful',label:'Playful',icon:'star'},{id:'chaotic',label:'Chaos!',icon:'spark'}] as mode}<button aria-pressed={settings.motion === mode.id} class:chosen={settings.motion === mode.id} onclick={() => settings.motion = mode.id as Settings['motion']}><Icon name={mode.icon} size={19}/><span>{mode.label}</span></button>{/each}</div></fieldset><label for="size">Size<select id="size" bind:value={settings.size}><option value="compact">Pill · 280 × 56</option><option value="expanded">Expanded · 680 × 500</option></select></label><details class="advanced-settings"><summary>Placement & readability</summary><label for="corner">Position<select id="corner" bind:value={settings.corner}><option value="middle-right">Right side</option><option value="middle-left">Left side</option><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+          <fieldset class="motion-picker"><legend>How much mischief?</legend><div class="motion-options">{#each [{id:'quiet',label:'Quiet',icon:'orbit'},{id:'playful',label:'Playful',icon:'star'},{id:'chaotic',label:'Chaos!',icon:'spark'}] as mode}<button aria-pressed={settings.motion === mode.id} class:chosen={settings.motion === mode.id} onclick={() => settings.motion = mode.id as Settings['motion']}><Icon name={mode.icon} size={19}/><span>{mode.label}</span></button>{/each}</div></fieldset><label for="size">Size<select id="size" bind:value={settings.size}><option value="compressed">Compressed · 160 × 56</option><option value="compact">Pill · 280 × 56</option><option value="expanded">Expanded · 680 × 500</option></select></label><details class="advanced-settings"><summary>Placement & readability</summary><label for="corner">Position<select id="corner" bind:value={settings.corner} onchange={() => settings.windowPosition = null}><option value="middle-right">Right side</option><option value="middle-left">Left side</option><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
 
-          <label for="monitor">Display<select id="monitor" bind:value={settings.monitor}>{#each monitors as monitor, index}<option value={index}>{monitor}</option>{/each}</select></label>
+          <label for="monitor">Display<select id="monitor" bind:value={settings.monitor} onchange={() => settings.windowPosition = null}>{#each monitors as monitor, index}<option value={index}>{monitor}</option>{/each}</select></label>
 
           <div class="form-grid"><label for="opacity">Panel opacity <b>{(settings.opacity * 100).toFixed(0)}%</b><input id="opacity" type="range" min="0.85" max="1" step="0.01" bind:value={settings.opacity}/></label><label for="text-scale">Text size <b>{(settings.textScale * 100).toFixed(0)}%</b><input id="text-scale" type="range" min="0.9" max="1.15" step="0.05" bind:value={settings.textScale}/></label></div>
 
           <label class="toggle" for="always-top"><input id="always-top" type="checkbox" bind:checked={settings.alwaysOnTop}/><span>Keep HUD above other windows</span></label></details>
 
-        </div><div class="preview-area"><div class="preview-heading"><span>LIVE PREVIEW</span><span class="sample-pill">SAMPLE DATA</span></div><div class="preview-stage"><Pill settings={{...settings, size: 'compact'}} snapshot={previewSnapshot} providers={previewProviders} {now} preview onTheme={cycleTheme} onMotion={toggleMotion}/></div><p class="preview-caption">The preview shows sample readings. Your real metrics appear after setup.</p><div class="preview-feature"><Icon name="cpu"/><span>System metrics stay on your device.</span></div><div class="preview-feature"><Icon name="question"/><span>AI icons signal when a connected session needs you.</span></div><button class="text-button demo-question" onclick={() => demoQuestion += 1}><Icon name="question" size={14}/> Test a sample question shake</button><button class="text-button demo-question" aria-pressed={demoPressure} onclick={() => demoPressure = !demoPressure}><Icon name="cpu" size={14}/>{demoPressure ? 'Stop sample pressure' : 'Test sample pressure badges'}</button></div></div>
+        </div><div class="preview-area"><div class="preview-heading"><span>LIVE PREVIEW</span><span class="sample-pill">SAMPLE DATA</span></div><div class="preview-stage"><Pill settings={{...settings, size: settings.size === 'compressed' ? 'compressed' : 'compact'}} snapshot={previewSnapshot} providers={previewProviders} {now} preview onCompress={toggleCompression} onTheme={cycleTheme} onMotion={toggleMotion}/></div><p class="preview-caption">Drag the grip to move. Right click to compress or reset position. The preview uses sample readings.</p><div class="preview-feature"><Icon name="cpu"/><span>System metrics stay on your device.</span></div><div class="preview-feature"><Icon name="question"/><span>AI icons signal when a connected session needs you.</span></div><button class="text-button demo-question" onclick={() => demoQuestion += 1}><Icon name="question" size={14}/> Test a sample question shake</button><button class="text-button demo-question" aria-pressed={demoPressure} onclick={() => demoPressure = !demoPressure}><Icon name="cpu" size={14}/>{demoPressure ? 'Stop sample pressure' : 'Test sample pressure badges'}</button></div></div>
 
       {:else if settings.step === 2}
 
@@ -545,6 +606,6 @@
 
     </section>
 
-  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}>{#if settings.size === 'compact'}<Pill reduced={settings.reducedMotion || effectiveMotion === 'quiet'} {settings} {snapshot} {providers} {now} {drainTracker} onSpace={resizePill} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{:else}<Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} {resources} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{/if}</div>{/if}
+  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}>{#if isPill(settings)}<Pill reduced={settings.reducedMotion || effectiveMotion === 'quiet'} openLeft={placedDirection.left} openUp={placedDirection.up} {settings} {snapshot} {providers} {now} {drainTracker} onSpace={resizePill} onCompress={toggleCompression} onResetPosition={resetPosition} onDrag={dragHud} onMove={nudgeHud} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{:else}<Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} {resources} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{/if}</div>{/if}
 
 </main>

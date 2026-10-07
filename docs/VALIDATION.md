@@ -2,6 +2,12 @@
 
 Checked on 7 October 2026.
 
+## 0.1.4 floating placement and compression
+
+- Source adds a native drag grip, physical-pixel keyboard nudging, a 160 × 56 compressed window and persisted custom placement. Geometry tests cover DPI changes, removed displays, duplicate display names and popover growth at all four edges independently of a corner preset.
+- Independent source review identified preset-dependent popover movement and ambiguous identical-monitor restoration; both were repaired. Final review and cloud frontend/native/package checks are pending.
+- Rust formatting is queued in cloud CI because this shell has no Rust toolchain. Local heavy validation and installation are held by shared host admission. Installed v0.1.3 and existing profiles remain unchanged. Dragging, compressed appearance and restart persistence need an admitted runtime check; no new runtime or single-process proof is claimed.
+
 ## 0.1.3 quiet updates and retained profiles
 
 - Local frontend checks passed with zero Svelte errors/warnings, 63 tests across 12 files and a successful production build. Dependency audit reported zero vulnerabilities.

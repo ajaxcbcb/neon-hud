@@ -98,6 +98,13 @@ fn replace_file(temp: &std::path::Path, path: &std::path::Path) -> std::io::Resu
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowPosition {
+    x: f64,
+    y: f64,
+    monitor: Option<String>,
+}
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct Settings {
     version: u8,
@@ -109,6 +116,7 @@ struct Settings {
     size: String,
     corner: String,
     monitor: usize,
+    window_position: Option<WindowPosition>,
     always_on_top: bool,
     opacity: f64,
     text_scale: f64,
@@ -221,6 +229,7 @@ impl Default for Settings {
             size: "compact".into(),
             corner: "middle-right".into(),
             monitor: 0,
+            window_position: None,
             always_on_top: true,
             opacity: 1.0,
             text_scale: 1.0,
@@ -303,8 +312,23 @@ fn normalize_settings(settings: &mut Settings) {
     if !["chaotic", "playful", "quiet"].contains(&settings.motion.as_str()) {
         settings.motion = default_motion();
     }
-    if !["compact", "expanded"].contains(&settings.size.as_str()) {
+    if !["compressed", "compact", "expanded"].contains(&settings.size.as_str()) {
         settings.size = "compact".into();
+    }
+    if let Some(position) = &mut settings.window_position {
+        if !position.x.is_finite()
+            || !position.y.is_finite()
+            || position.x.abs() > 100_000.0
+            || position.y.abs() > 100_000.0
+        {
+            settings.window_position = None;
+        } else if position
+            .monitor
+            .as_ref()
+            .is_some_and(|name| name.len() > 1024)
+        {
+            position.monitor = None;
+        }
     }
     if ![
         "top-left",
@@ -376,16 +400,43 @@ mod settings_tests {
         settings.theme = "cyberpunk".into();
         settings.corner = "bottom-left".into();
         settings.auto_install_updates = true;
+        settings.size = "compressed".into();
+        settings.window_position = Some(WindowPosition {
+            x: 143.5,
+            y: 210.0,
+            monitor: Some("External display".into()),
+        });
         atomic_json(&path, &settings).unwrap();
         let restored = read_settings(&path).unwrap();
         assert!(restored.completed);
         assert_eq!(restored.theme, "cyberpunk");
         assert_eq!(restored.corner, "bottom-left");
         assert!(restored.auto_install_updates);
+        assert_eq!(restored.size, "compressed");
+        let position = restored.window_position.unwrap();
+        assert_eq!(position.x, 143.5);
+        assert_eq!(position.y, 210.0);
+        assert_eq!(position.monitor.as_deref(), Some("External display"));
         fs::write(&path, b"{broken").unwrap();
         assert!(read_settings(&path).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"{broken");
         fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn legacy_and_invalid_window_positions_are_safe() {
+        let old: Settings = serde_json::from_str(r#"{"completed":true,"size":"compact"}"#).unwrap();
+        assert!(old.window_position.is_none());
+        assert!(old.completed);
+        let mut settings = Settings::default();
+        for x in [f64::NAN, f64::INFINITY, 100_001.0] {
+            settings.window_position = Some(WindowPosition {
+                x,
+                y: 0.0,
+                monitor: None,
+            });
+            normalize_settings(&mut settings);
+            assert!(settings.window_position.is_none());
+        }
     }
     #[test]
     fn corner_defaults_and_normalizes_to_supported_positions() {

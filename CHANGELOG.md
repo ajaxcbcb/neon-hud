@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.4] - 2026-10-07
+
+### Added
+
+- Drag grip and keyboard nudging with saved monitor-relative placement; DPI and disconnected-monitor recovery keep the HUD onscreen.
+- A 160 × 56 compressed pill with numerical AI allowances, the most stressed system metric, hover details and attention badges.
+- Right-click compression and Reset position controls; compressed size is selectable on the first configuration page.
+
+### Improved
+
+- Saved custom placement survives size changes, hover popovers, settings and tray restoration.
+- Pending movement is captured before Quit, restart and update preference flushes. Existing profiles keep their docked placement until moved.
+
 ## [0.1.3] - 2026-10-07
 
 ### Added
