@@ -20,6 +20,7 @@ $receiptPath = Join-Path $outputPath 'receipt.json'
 $receipt = [ordered]@{ result = 'pending'; from = $FromTag; to = $ToTag; sourceCommit = $env:GITHUB_SHA }
 $cliIndex = 0
 $previousUpdateTrace = $env:NEON_HUD_UPDATE_TRACE
+$updatedProcessHandle = [IntPtr]::Zero
 
 function Wait-UpdateEvent([uint32]$PidValue, [string]$EventName, [string]$Version, [int]$Seconds = 65) {
     $path = Join-Path $profilePath 'native-updates/ui-events.jsonl'
@@ -98,6 +99,34 @@ public static class UpdateProofDesktop {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr handle, out uint code);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool QueryFullProcessImageName(IntPtr handle, uint flags, StringBuilder name, ref uint length);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+    public static IntPtr OpenOwnedProcess(uint pid, string expectedPath) {
+        // Retain a real wait/query handle before Quit. Get-Process can lose the
+        // adopted child's exit status after it has left the process table.
+        var handle = OpenProcess(0x00101000u, false, pid);
+        if (handle == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        try {
+            var name = new StringBuilder(32768); uint length = (uint)name.Capacity;
+            if (!QueryFullProcessImageName(handle, 0, name, ref length))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            if (!String.Equals(System.IO.Path.GetFullPath(name.ToString()), System.IO.Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase))
+                throw new Exception("Replacement process handle does not own the expected executable");
+            return handle;
+        } catch { CloseHandle(handle); throw; }
+    }
+    public static uint WaitOwnedProcess(IntPtr handle, uint milliseconds) {
+        var result = WaitForSingleObject(handle, milliseconds);
+        if (result == 258u) throw new Exception("Right-click Quit did not close the updated application normally");
+        if (result != 0u) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        uint code;
+        if (!GetExitCodeProcess(handle, out code)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        return code;
+    }
+    public static void ReleaseProcess(IntPtr handle) { if (handle != IntPtr.Zero) CloseHandle(handle); }
     public static List<Window> Visible(uint pid) {
         var result = new List<Window>();
         Callback callback = (handle, param) => {
@@ -251,7 +280,7 @@ try {
     $guiProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'neon-hud-native.exe'" | Where-Object { $_.ExecutablePath -eq $installedExe })
     if ($guiProcesses.Count -ne 1) { throw 'Expected exactly one updated native GUI' }
     $guiPid = [uint32]$guiProcesses[0].ProcessId
-    $updatedGui = Get-Process -Id $guiPid
+    $updatedProcessHandle = [UpdateProofDesktop]::OpenOwnedProcess($guiPid, $installedExe)
     $hud = Wait-Window $guiPid 'Neon HUD Native'
     Start-Sleep -Milliseconds 500
     [UpdateProofDesktop]::Capture($hud, (Join-Path $outputPath 'updated-hud.png'))
@@ -282,10 +311,9 @@ try {
     $receipt.afterCheck = $current
     $menu = Open-Controls $guiPid
     [UpdateProofDesktop]::Click($menu, 120, (58+36*5), $false)
-    if (-not $updatedGui.WaitForExit(15000)) { throw 'Right-click Quit did not close the updated application normally' }
-    $updatedGui.Refresh()
-    if ($updatedGui.ExitCode -ne 0) { throw "Updated GUI exited with failure code $($updatedGui.ExitCode)" }
-    $receipt.updatedGuiExitCode = $updatedGui.ExitCode
+    $updatedExitCode = [UpdateProofDesktop]::WaitOwnedProcess($updatedProcessHandle, 15000)
+    if ($updatedExitCode -ne 0) { throw "Updated GUI exited with failure code $updatedExitCode" }
+    $receipt.updatedGuiExitCode = $updatedExitCode
     $saved = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
     foreach ($name in @('completed','theme','motion','size','launchAtLogin','codexEnabled')) { if ($saved.$name -ne $seed[$name]) { throw "Preference changed during update: $name" } }
     if (@($saved.storageDriveIds).Count -ne 1 -or $saved.storageDriveIds[0] -ne 'proof-drive' -or $saved.resources.samplingMs -ne 1000 -or -not $saved.resources.adaptive) { throw 'Drive/resource preferences changed during update' }
@@ -304,6 +332,7 @@ try {
     $receipt.result = 'failed'; $receipt.failure = $_.Exception.Message
     throw
 } finally {
+    [UpdateProofDesktop]::ReleaseProcess($updatedProcessHandle)
     $env:NEON_HUD_UPDATE_TRACE = $previousUpdateTrace
     $trace = Join-Path $profilePath 'native-updates/ui-events.jsonl'
     if (Test-Path -LiteralPath $trace) { Copy-Item -LiteralPath $trace -Destination (Join-Path $outputPath 'ui-events.jsonl') }
