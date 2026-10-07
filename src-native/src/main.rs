@@ -714,9 +714,7 @@ impl App {
                 }
             }
             // A recoverable save failure keeps the live utility worker available.
-            if self.quitting
-                && self.productivity.as_ref().is_none_or(|c| c.ready_to_stop())
-            {
+            if self.quitting && self.productivity.as_ref().is_none_or(|c| c.ready_to_stop()) {
                 self.utilities.stop();
             }
         }
@@ -2370,8 +2368,10 @@ impl eframe::App for App {
         self.events(ctx);
         self.productivity_events(ctx);
         if let Some(controller) = &self.productivity {
-            if !controller.loading() && self.utility_preferences.as_ref() != Some(&controller.state.utilities)
-                && self.utilities.configure(controller.state.utilities.clone()) {
+            if !controller.loading()
+                && self.utility_preferences.as_ref() != Some(&controller.state.utilities)
+                && self.utilities.configure(controller.state.utilities.clone())
+            {
                 self.utility_preferences = Some(controller.state.utilities.clone());
             }
         }
@@ -2404,13 +2404,18 @@ impl eframe::App for App {
         }
         self.poll();
         self.hud(ctx);
-        let utilities_visible = !self.hidden && !self.quitting && self.is_nook()
+        let utilities_visible = !self.hidden
+            && !self.quitting
+            && self.is_nook()
             && self.nook_ui.presentation.phase != nook::Phase::Collapsed;
         let mirror_requested = self.nook_ui.mirror_enabled
             && matches!(self.nook_ui.tab, nook_ui::Tab::Home | nook_ui::Tab::Mirror);
         let under_pressure = self.mode != Mode::Normal;
-        self.utilities.activity(utilities_visible, mirror_requested, under_pressure);
-        if !utilities_visible || !mirror_requested || under_pressure
+        self.utilities
+            .activity(utilities_visible, mirror_requested, under_pressure);
+        if !utilities_visible
+            || !mirror_requested
+            || under_pressure
             || self.utility_snapshot.mirror.frame.is_none()
         {
             self.nook_ui.mirror_texture = None;

@@ -2,6 +2,17 @@
 
 Checked on 7 October 2026.
 
+## Native Nook candidate
+
+- The [Windows candidate run](https://github.com/ajaxcbcb/neon-hud/actions/runs/37647409733), source `c91e835d7bfbfadd90e6ff7e82cf0bba34e804bf`, passed native/core tests, release build and native dependency closure after cloud-generated formatting/dependency repairs. The committed-source gate failed because those repairs were not yet committed; Mac compilation also exposed an Objective-C BOOL callback type error. This is not exact-source acceptance.
+- Real Windows pointer input passed collapsed 240 × 40, hover peek 520 × 112, expanded/pinned 900 × 192, outside-pointer retention, Escape collapse and all 11 Nook/Tray/icon views. Pointer and keyboard actions saved the entered note, task and running timer. The isolated session exited normally with code 0. Settings, eight screen-edge hovers and right-click menu actions passed in the same run.
+- Native frames were inspected for the shallow simultaneous widgets, numeric rail, focused instruments/AI, notes, tasks, timer and file Tray. The [Nook capture](assets/native-nook.png) contains runner measurements and unavailable-source labels, with no invented media or AI readings. Exact transition timing and Mac/target-machine hardware behavior remain unverified.
+- Formatting/lock repair, Mac callback repair and a rapid camera-toggle retry fix are being checked in the next exact-source run. Public alpha.5 and installed update evidence will be recorded after acceptance.
+
+## Native signed alpha.4 update
+
+- [Publication checks](https://github.com/ajaxcbcb/neon-hud/actions/runs/37626595134) passed, and [hosted alpha.3 → alpha.4 GUI update](https://github.com/ajaxcbcb/neon-hud/actions/runs/37630137496) passed signed metadata/archive verification, tamper rejection, physical Check/Download/Restart actions, normal exits, replacement binary/startup acknowledgement and retained preferences/startup registration. One replacement GUI was observed; this does not prove connector-inclusive single-process operation or the target-machine update.
+
 ## 0.2.0-alpha.2 screen-aware hover
 
 - [Exact-source CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37602211912), source `173101a3a8f5eeaf4f85ac6c043de7e05607e5cb`, passed formatting, eight native tests on each platform, 31 Windows and 28 Mac core tests in both feature configurations, locked builds, native dependency closure and both platform packages.

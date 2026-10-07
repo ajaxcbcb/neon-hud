@@ -1,6 +1,6 @@
 [package]
 name = "neon-hud-native"
-version = "0.2.0-alpha.4"
+version = "0.2.0-alpha.5"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Native floating desktop instruments for Neon HUD"
@@ -32,6 +32,7 @@ windows-future = "=0.2.1"
 
 [target.'cfg(target_os="macos")'.dependencies]
 block2 = "0.6.2"
+objc2 = "0.6"
 
 [patch.crates-io]
 winit = { path = "vendor/winit" }

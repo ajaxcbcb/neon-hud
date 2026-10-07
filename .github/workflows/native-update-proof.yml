@@ -5,20 +5,20 @@ on:
     inputs:
       from:
         type: string
-        default: v0.2.0-alpha.3
+        default: v0.2.0-alpha.4
       to:
         type: string
-        default: v0.2.0-alpha.4
+        default: v0.2.0-alpha.5
   workflow_dispatch:
     inputs:
       from:
         description: Published native preview to install first
         type: string
-        default: v0.2.0-alpha.3
+        default: v0.2.0-alpha.4
       to:
         description: Newest published native preview to receive through the updater
         type: string
-        default: v0.2.0-alpha.4
+        default: v0.2.0-alpha.5
 
 permissions:
   contents: read

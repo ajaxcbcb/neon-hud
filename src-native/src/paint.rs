@@ -374,11 +374,20 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
     };
     match key {
         "nook" => {
-            painter.rect_stroke(Rect::from_center_size(c, Vec2::new(15. * s, 9. * s)), 4, stroke, egui::StrokeKind::Middle);
+            painter.rect_stroke(
+                Rect::from_center_size(c, Vec2::new(15. * s, 9. * s)),
+                4,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
             line((-4., 0.), (4., 0.));
         }
         "play" => {
-            painter.add(egui::Shape::convex_polygon(vec![pt(-3., -6.), pt(6., 0.), pt(-3., 6.)], color, Stroke::NONE));
+            painter.add(egui::Shape::convex_polygon(
+                vec![pt(-3., -6.), pt(6., 0.), pt(-3., 6.)],
+                color,
+                Stroke::NONE,
+            ));
         }
         "pause" => {
             painter.rect_filled(Rect::from_min_max(pt(-5., -6.), pt(-1., 6.)), 1, color);
@@ -386,7 +395,15 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
         }
         "skip" | "previous" => {
             let direction = if key == "skip" { 1. } else { -1. };
-            painter.add(egui::Shape::convex_polygon(vec![pt(-5. * direction, -5.), pt(3. * direction, 0.), pt(-5. * direction, 5.)], color, Stroke::NONE));
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    pt(-5. * direction, -5.),
+                    pt(3. * direction, 0.),
+                    pt(-5. * direction, 5.),
+                ],
+                color,
+                Stroke::NONE,
+            ));
             line((6. * direction, -5.), (6. * direction, 5.));
         }
         "media" => {
@@ -397,11 +414,18 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
             painter.circle_filled(pt(3., 3.), 3. * s, color);
         }
         "calendar" => {
-            painter.rect_stroke(Rect::from_min_max(pt(-7., -5.), pt(7., 7.)), 2, stroke, egui::StrokeKind::Middle);
+            painter.rect_stroke(
+                Rect::from_min_max(pt(-7., -5.), pt(7., 7.)),
+                2,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
             line((-7., -1.), (7., -1.));
             line((-3., -8.), (-3., -3.));
             line((3., -8.), (3., -3.));
-            for (x,y) in [(-3., 2.), (2., 2.), (-3., 5.), (2., 5.)] { painter.circle_filled(pt(x,y), 0.7 * s, color); }
+            for (x, y) in [(-3., 2.), (2., 2.), (-3., 5.), (2., 5.)] {
+                painter.circle_filled(pt(x, y), 0.7 * s, color);
+            }
         }
         "mirror" => {
             painter.circle_stroke(pt(0., -2.), 6. * s, stroke);
@@ -411,15 +435,32 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
             line((0., 0.), (3., -3.));
         }
         "shortcuts" => {
-            painter.add(egui::Shape::line(vec![pt(1., -8.), pt(-5., 1.), pt(0., 1.), pt(-1., 8.), pt(5., -1.), pt(0., -1.)], stroke));
+            painter.add(egui::Shape::line(
+                vec![
+                    pt(1., -8.),
+                    pt(-5., 1.),
+                    pt(0., 1.),
+                    pt(-1., 8.),
+                    pt(5., -1.),
+                    pt(0., -1.),
+                ],
+                stroke,
+            ));
         }
         "battery" => {
-            painter.rect_stroke(Rect::from_min_max(pt(-7., -4.), pt(5., 4.)), 2, stroke, egui::StrokeKind::Middle);
+            painter.rect_stroke(
+                Rect::from_min_max(pt(-7., -4.), pt(5., 4.)),
+                2,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
             line((7., -1.), (7., 1.));
             line((-4., 0.), (2., 0.));
         }
         "reset" => {
-            let points = (0..=20).map(|i| c + Vec2::angled(-1. + i as f32 * 5. / 20.) * 6. * s).collect();
+            let points = (0..=20)
+                .map(|i| c + Vec2::angled(-1. + i as f32 * 5. / 20.) * 6. * s)
+                .collect();
             painter.add(egui::Shape::line(points, stroke));
             line((-6., -5.), (-6., 0.));
             line((-6., -5.), (-1., -5.));

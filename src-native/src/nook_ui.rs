@@ -470,8 +470,7 @@ impl App {
         };
         let scale = desktop::coordinate_scale(ctx.pixels_per_point());
         let size = capsule_size(progress).map(|value| value * scale);
-        let Some(placement) = nook_root_placement(anchor, size, &self.screens)
-        else {
+        let Some(placement) = nook_root_placement(anchor, size, &self.screens) else {
             return;
         };
         let changed = self.nook_ui.commanded.as_ref().is_none_or(|old| {
@@ -644,7 +643,15 @@ impl App {
         let expanded = progress > 0.65;
         let right = if expanded { 78. } else { 34. };
         let toggle = Rect::from_min_max(r.min + Vec2::new(26., 0.), r.max - Vec2::new(right, 0.));
-        let response = ui.interact(toggle, ui.id().with("nook_toggle"), if expanded { Sense::hover() } else { Sense::click() });
+        let response = ui.interact(
+            toggle,
+            ui.id().with("nook_toggle"),
+            if expanded {
+                Sense::hover()
+            } else {
+                Sense::click()
+            },
+        );
         if response.clicked() {
             let (reduced, pressure) = self.nook_motion_flags();
             self.nook_ui
@@ -872,45 +879,100 @@ impl App {
         }
     }
     fn nook_content(&mut self, ui: &mut egui::Ui, r: Rect, ctx: &egui::Context, settle: bool) {
-        let elapsed = epoch_ms().saturating_sub(self.nook_ui.tab_changed_ms).max(0);
-        let fade = if settle { 1. } else { (elapsed as f32 / 140.).clamp(0., 1.) };
-        if fade < 1. { ctx.request_repaint_after(Duration::from_millis(16)); }
-        let content = Rect::from_min_max(r.min + Vec2::new(16., 46. + (1. - fade) * 4.), r.max - Vec2::new(16., 22.));
-        ui.scope_builder(egui::UiBuilder::new().id_salt("nook_content").max_rect(content).sense(Sense::hover()), |ui| {
-            ui.set_clip_rect(content.intersect(ui.clip_rect()));
-            ui.set_opacity(fade);
-            match self.nook_ui.tab {
-                Tab::Home => self.nook_home(ui, content, ctx),
-                Tab::Instruments => self.nook_instruments(ui, content, ctx),
-                Tab::Ai => self.nook_ai(ui, content, ctx),
-                Tab::Notes => self.nook_notes_card(ui, content),
-                Tab::Tasks => self.nook_tasks(ui, content),
-                Tab::Timer => self.nook_timer_wheels(ui, content),
-                Tab::Files => self.nook_files(ui, content),
-                Tab::Media => self.nook_media_card(ui, content, ctx),
-                Tab::Calendar => self.nook_calendar_card(ui, content, true),
-                Tab::Mirror => self.nook_mirror_card(ui, content, ctx),
-                Tab::Shortcuts => self.nook_shortcuts(ui, content, ctx),
-            }
-        });
+        let elapsed = epoch_ms()
+            .saturating_sub(self.nook_ui.tab_changed_ms)
+            .max(0);
+        let fade = if settle {
+            1.
+        } else {
+            (elapsed as f32 / 140.).clamp(0., 1.)
+        };
+        if fade < 1. {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+        let content = Rect::from_min_max(
+            r.min + Vec2::new(16., 46. + (1. - fade) * 4.),
+            r.max - Vec2::new(16., 22.),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt("nook_content")
+                .max_rect(content)
+                .sense(Sense::hover()),
+            |ui| {
+                ui.set_clip_rect(content.intersect(ui.clip_rect()));
+                ui.set_opacity(fade);
+                match self.nook_ui.tab {
+                    Tab::Home => self.nook_home(ui, content, ctx),
+                    Tab::Instruments => self.nook_instruments(ui, content, ctx),
+                    Tab::Ai => self.nook_ai(ui, content, ctx),
+                    Tab::Notes => self.nook_notes_card(ui, content),
+                    Tab::Tasks => self.nook_tasks(ui, content),
+                    Tab::Timer => self.nook_timer_wheels(ui, content),
+                    Tab::Files => self.nook_files(ui, content),
+                    Tab::Media => self.nook_media_card(ui, content, ctx),
+                    Tab::Calendar => self.nook_calendar_card(ui, content, true),
+                    Tab::Mirror => self.nook_mirror_card(ui, content, ctx),
+                    Tab::Shortcuts => self.nook_shortcuts(ui, content, ctx),
+                }
+            },
+        );
         // Register navigation after the bounded child content so its background
         // cannot claim the pointer region above the widgets.
-        let tabs = [Tab::Home, Tab::Files, Tab::Instruments, Tab::Ai, Tab::Notes,
-            Tab::Tasks, Tab::Timer, Tab::Media, Tab::Calendar, Tab::Mirror, Tab::Shortcuts];
+        let tabs = [
+            Tab::Home,
+            Tab::Files,
+            Tab::Instruments,
+            Tab::Ai,
+            Tab::Notes,
+            Tab::Tasks,
+            Tab::Timer,
+            Tab::Media,
+            Tab::Calendar,
+            Tab::Mirror,
+            Tab::Shortcuts,
+        ];
         for (i, tab) in tabs.into_iter().enumerate() {
             let gap = ((r.width() - 250.) / 9.).clamp(20., 38.);
-            let (x, w) = if i < 2 { (26. + i as f32 * 60., 56.) }
-                else { (158. + (i - 2) as f32 * gap, gap.min(34.)) };
+            let (x, w) = if i < 2 {
+                (26. + i as f32 * 60., 56.)
+            } else {
+                (158. + (i - 2) as f32 * gap, gap.min(34.))
+            };
             let tab_rect = Rect::from_min_size(r.min + Vec2::new(x, 8.), Vec2::new(w, 25.));
-            let response = ui.interact(tab_rect, ui.id().with(("nook_tab", tab.key())), Sense::click());
+            let response = ui.interact(
+                tab_rect,
+                ui.id().with(("nook_tab", tab.key())),
+                Sense::click(),
+            );
             let active = self.nook_ui.tab == tab;
             if active || response.hovered() {
-                ui.painter().rect_filled(tab_rect, 7, if active { Color32::from_gray(38) } else { SURFACE });
+                ui.painter().rect_filled(
+                    tab_rect,
+                    7,
+                    if active {
+                        Color32::from_gray(38)
+                    } else {
+                        SURFACE
+                    },
+                );
             }
             if i < 2 {
-                ui.painter().text(tab_rect.center(), egui::Align2::CENTER_CENTER, tab.title(), FontId::proportional(12.), if active { INK } else { DIM });
+                ui.painter().text(
+                    tab_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    tab.title(),
+                    FontId::proportional(12.),
+                    if active { INK } else { DIM },
+                );
             } else {
-                paint::icon(ui.painter(), tab_rect.center(), tab.key(), if active { INK } else { DIM }, 15.);
+                paint::icon(
+                    ui.painter(),
+                    tab_rect.center(),
+                    tab.key(),
+                    if active { INK } else { DIM },
+                    15.,
+                );
             }
             if response.clicked() && !active {
                 self.nook_ui.tab = tab;
@@ -921,17 +983,45 @@ impl App {
             response.on_hover_text(tab.title());
         }
         if r.width() >= 750. {
-            self.nook_power_badge(ui, Rect::from_min_size(Pos2::new(r.right() - 202., r.top() + 8.), Vec2::new(101., 25.)));
+            self.nook_power_badge(
+                ui,
+                Rect::from_min_size(
+                    Pos2::new(r.right() - 202., r.top() + 8.),
+                    Vec2::new(101., 25.),
+                ),
+            );
         }
         let status = if self.productivity.as_ref().is_some_and(|c| !c.writable()) {
             self.productivity_status.as_str()
-        } else if Instant::now() < self.timer_notice_until { "Timer complete" }
-        else if self.nook_ui.tab == Tab::Files { self.productivity_status.as_str() }
-        else if self.paused { "Monitoring paused" }
-        else if self.mode != Mode::Normal { self.mode.name() }
-        else { "Hover to peek · click to open · Esc to close" };
-        ui.painter().text(r.left_bottom() + Vec2::new(20., -10.), egui::Align2::LEFT_CENTER, status, FontId::proportional(9.), DIM);
-        ui.painter().circle_filled(r.right_bottom() - Vec2::new(20., 10.), 2.5, if self.paused { DIM } else if self.mode != Mode::Normal { paint::stress(95.) } else { self.palette().accent });
+        } else if Instant::now() < self.timer_notice_until {
+            "Timer complete"
+        } else if self.nook_ui.tab == Tab::Files {
+            self.productivity_status.as_str()
+        } else if self.paused {
+            "Monitoring paused"
+        } else if self.mode != Mode::Normal {
+            self.mode.name()
+        } else {
+            "Hover to peek · click to open · Esc to close"
+        };
+        ui.painter().text(
+            r.left_bottom() + Vec2::new(20., -10.),
+            egui::Align2::LEFT_CENTER,
+            status,
+            FontId::proportional(9.),
+            DIM,
+        );
+        ui.painter().circle_filled(
+            r.right_bottom() - Vec2::new(20., 10.),
+            2.5,
+            if self.paused {
+                DIM
+            } else if self.mode != Mode::Normal {
+                paint::stress(95.)
+            } else {
+                self.palette().accent
+            },
+        );
     }
     fn nook_instruments(&mut self, ui: &mut egui::Ui, r: Rect, ctx: &egui::Context) {
         let keys = self.nook_metric_keys();

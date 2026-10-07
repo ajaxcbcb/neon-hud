@@ -4,15 +4,21 @@ A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic a
 
 ## Native Rust desktop preview
 
-[Download v0.2.0-alpha.1](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.1) · [Native controls and profile](src-native/README.md) · [Native release notes](docs/releases/v0.2.0-alpha.1.md) · [Validation](docs/VALIDATION.md)
+[Native downloads](https://github.com/ajaxcbcb/neon-hud/releases) · [Controls and profile](src-native/README.md) · [Nook release notes](docs/releases/v0.2.0-alpha.5.md) · [Validation](docs/VALIDATION.md)
 
-Rust/egui/glow draws the floating pill and custom neon frame directly. Appearance, Connections and Preferences are fixed setup steps. Theme cards, motion tiles and a labeled sample pill retain the playful layout; settings have no scrolling or conventional OS title bar. New profiles start at 160 × 56 logical pixels, with a 280 × 56 regular mode.
+Rust/egui/glow draws the floating HUD and custom neon frame directly. The new **Nook** presentation opens from a 240 × 40 capsule into a shallow panel of music, calendar, notes, timer, tasks and quick actions. Nook/Tray navigation and a numerical CPU/GPU/RAM/network/drives/Codex/Claude rail keep your tools and measurements together. Hover peeks, click opens, pin holds it open and Escape collapses it. The movable 160 × 56 compressed pill and 280 × 56 regular pill remain selectable in Appearance.
+
+![Native Nook with simultaneous utility widgets and numerical system readings](docs/assets/native-nook.png)
+
+Actual Windows cloud capture. System readings belong to the runner; unavailable media, calendar and AI sources are shown explicitly. See the [reference study](reference-learning/notchnook/study.md) for observed NotchNook states and the limits of the animation comparison.
+
+Appearance, Connections and Preferences remain fixed setup steps. Theme cards, motion choices and a labeled sample pill retain the playful layout; settings have no scrolling or conventional OS title bar.
 
 ![Native custom neon settings frame captured on Windows](docs/assets/native-settings.png)
 
-Actual Windows CI capture. The appearance preview is labeled **SAMPLE DATA**. The separate instrument window and tiny pill were also rendered and inspected. Windows and Mac builds passed; target-machine interaction, Mac runtime and performance measurements remain open.
+Actual Windows CI capture. The appearance preview is labeled **SAMPLE DATA**. Build, interaction and installation evidence is recorded separately in validation.
 
-Windows: extract the portable ZIP and run `neon-hud-native.exe`. Mac: open the app from the DMG or ZIP; this native preview supports Apple Silicon (arm64). Packages are unsigned. The preview imports preferences once into a separate profile and has opt-in startup. Native automatic updates and strict single-process connectors are still being built. See the native release notes before switching.
+Windows: extract the portable ZIP and run `neon-hud-native.exe`. Mac: open the app from the DMG or ZIP; this native preview supports Apple Silicon (arm64). Packages are unsigned by the operating system. The preview imports preferences once into a separate profile and has opt-in startup. Native automatic updates use a separate signed channel; the hosted alpha.3 → alpha.4 GUI update passed. Codex still uses its provider helper, so strict single-process operation remains open. See the native release notes before switching.
 
 ## Existing WebView release
 
