@@ -4,7 +4,7 @@ A Rust desktop utility drawn directly with egui/glow. There is no WebView or scr
 
 Build with `cargo run --manifest-path src-native/Cargo.toml --locked --release` on Windows or macOS. New profiles start compressed; imported profiles keep their saved size. Windows previews are portable ZIPs; macOS previews are `.app` bundles and DMGs. Preview packages are unsigned. Hosted builds and runtime checks are recorded in the repository validation log.
 
-Drag the dotted grip to move, double click it to compress, click an icon for readings, hover for a quick peek, and right click for controls. Arrow keys move the focused pill; Shift moves one logical pixel per press. Escape hides it in the tray. Settings starts with Appearance and uses tabs and paged drive choices rather than scrolling.
+Drag the dotted grip to move, double click it to compress, click an icon for readings, hover for a quick peek, and right click for controls. Arrow keys move the focused pill; Shift moves one logical pixel per press. Escape hides it in the tray. Settings uses a custom neon frame with a drag header, theme cards, motion tiles and a sample pill preview. Appearance, Connections and Preferences are fixed steps; drive choices use pages. There is no scrolling or conventional OS title bar.
 
 The preview imports your existing profile once into `io.github.ajaxcbcb.neonhud/native-preview`, then saves that separate profile. Startup is opt-in under **Neon HUD Native Preview**, separate from the installed HUD. A profile that cannot be read is retained and changes are disabled rather than overwriting it.
 

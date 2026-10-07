@@ -94,7 +94,11 @@ jobs:
       - name: Capture native Windows GUI and process receipt
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke"
+        run: |
+          foreach ($page in 0..3) {
+            $output = if ($page -eq 0) { "$env:RUNNER_TEMP/native-smoke" } else { "$env:RUNNER_TEMP/native-smoke/page-$page" }
+            ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory $output -SettingsPage $page
+          }
       - name: Package Windows portable preview
         if: runner.os == 'Windows'
         shell: pwsh

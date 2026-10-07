@@ -26,8 +26,8 @@ impl Palette {
             ),
         };
         Self {
-            bg: Color32::from_rgb(15, 20, 28),
-            panel: Color32::from_rgb(26, 33, 44),
+            bg: Color32::from_rgb(18, 18, 34),
+            panel: Color32::from_rgb(35, 35, 57),
             ink: Color32::from_rgb(239, 245, 249),
             dim: Color32::from_rgb(146, 160, 180),
             accent,
@@ -116,6 +116,180 @@ pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, remaining: bool
         p.dim,
     );
 }
+
+pub fn choice_card(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: &str,
+    title: &str,
+    subtitle: &str,
+    icon_key: &str,
+    selected: bool,
+    p: Palette,
+) -> egui::Response {
+    let response = ui.interact(rect, ui.id().with(id), egui::Sense::click());
+    let painter = ui.painter_at(rect.expand(6.));
+    let dark_ink = Color32::from_rgb(18, 18, 34);
+    let foreground = if selected { dark_ink } else { p.ink };
+    let secondary = if selected {
+        dark_ink.gamma_multiply(0.75)
+    } else {
+        p.dim
+    };
+    let shadow = Color32::from_rgb(255, 91, 179).gamma_multiply(if selected { 0.8 } else { 0.2 });
+    painter.rect_filled(rect.translate(Vec2::new(4., 5.)), 15., shadow);
+    let fill = if selected {
+        p.accent
+    } else if response.hovered() {
+        Color32::from_rgb(46, 42, 72)
+    } else {
+        p.panel
+    };
+    painter.rect_filled(rect, 15., fill);
+    painter.rect_stroke(
+        rect,
+        15.,
+        Stroke::new(1., if selected { p.accent } else { Color32::from_rgb(78, 71, 112) }),
+        egui::StrokeKind::Inside,
+    );
+    let icon_center = rect.left_top() + Vec2::new(26., 25.);
+    icon(&painter, icon_center, icon_key, foreground, 21.);
+    painter.text(
+        rect.left_top() + Vec2::new(54., 18.),
+        egui::Align2::LEFT_CENTER,
+        title,
+        FontId::proportional(15.),
+        foreground,
+    );
+    painter.text(
+        rect.left_top() + Vec2::new(54., 36.),
+        egui::Align2::LEFT_CENTER,
+        subtitle,
+        FontId::proportional(11.),
+        secondary,
+    );
+    if selected {
+        painter.text(rect.right_center() - Vec2::new(18., 0.), egui::Align2::CENTER_CENTER, "✓", FontId::proportional(16.), foreground);
+    }
+    response
+}
+
+pub fn motion_card(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: &str,
+    title: &str,
+    icon_key: &str,
+    selected: bool,
+    p: Palette,
+) -> egui::Response {
+    let response = ui.interact(rect, ui.id().with(id), egui::Sense::click());
+    let painter = ui.painter_at(rect.expand(5.));
+    let foreground = if selected { Color32::from_rgb(18, 18, 34) } else { p.ink };
+    painter.rect_filled(
+        rect.translate(Vec2::new(3., 4.)),
+        13.,
+        Color32::from_rgb(255, 91, 179).gamma_multiply(if selected { 0.75 } else { 0.15 }),
+    );
+    painter.rect_filled(
+        rect,
+        13.,
+        if selected {
+            p.accent
+        } else if response.hovered() {
+            Color32::from_rgb(46, 42, 72)
+        } else {
+            p.panel
+        },
+    );
+    painter.rect_stroke(
+        rect,
+        13.,
+        Stroke::new(1., if selected { p.accent } else { Color32::from_rgb(78, 71, 112) }),
+        egui::StrokeKind::Inside,
+    );
+    icon(
+        &painter,
+        Pos2::new(rect.center().x, rect.top() + rect.height() * 0.36),
+        icon_key,
+        foreground,
+        23.,
+    );
+    painter.text(
+        Pos2::new(rect.center().x, rect.top() + rect.height() * 0.74),
+        egui::Align2::CENTER_CENTER,
+        title,
+        FontId::proportional(13.),
+        foreground,
+    );
+    response
+}
+
+pub fn appearance_preview(ui: &mut egui::Ui, rect: Rect, p: Palette, compact: bool) {
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 18., p.panel);
+    painter.rect_stroke(
+        rect,
+        18.,
+        Stroke::new(1., Color32::from_rgb(78, 71, 112)),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        rect.left_top() + Vec2::new(20., 21.),
+        egui::Align2::LEFT_CENTER,
+        "HUD PREVIEW",
+        FontId::monospace(12.),
+        p.ink,
+    );
+    let badge = Rect::from_min_size(rect.right_top() + Vec2::new(-119., 12.), Vec2::new(101., 22.));
+    painter.rect_filled(badge, 4, p.pop);
+    painter.text(
+        badge.center(),
+        egui::Align2::CENTER_CENTER,
+        "SAMPLE DATA",
+        FontId::monospace(10.),
+        p.bg,
+    );
+    let center = rect.center() + Vec2::new(0., 3.);
+    let radius_x = (rect.width() * 0.31).min(116.);
+    let radius_y = (rect.height() * 0.37).min(108.);
+    for i in 0..36 {
+        let a = i as f32 * std::f32::consts::TAU / 36.;
+        let b = a + std::f32::consts::TAU / 72.;
+        let at = |angle: f32| center + Vec2::new(angle.cos() * radius_x, angle.sin() * radius_y);
+        painter.line_segment(
+            [at(a), at(b)],
+            Stroke::new(1.4, Color32::from_rgb(255, 91, 179)),
+        );
+    }
+    let pill = Rect::from_center_size(
+        center,
+        Vec2::new(if compact { 160. } else { 280. }, 56.),
+    );
+    painter.rect_filled(pill.translate(Vec2::new(3., 4.)), 15., p.pop.gamma_multiply(0.5));
+    painter.rect_filled(pill, 15., p.bg);
+    painter.rect_stroke(pill, 15., Stroke::new(1.4, p.accent), egui::StrokeKind::Inside);
+    for y in [-4., 0., 4.] { painter.circle_filled(pill.left_center() + Vec2::new(10., y), 0.8, p.dim); }
+    let keys: &[(&str, &str)] = if compact {
+        &[("cpu", "42%"), ("ram", "33%"), ("codex", "65%"), ("claude", "38%")]
+    } else {
+        &[("cpu", "42%"), ("gpu", "57%"), ("ram", "33%"), ("network", "—"), ("storage", "79%"), ("codex", "65%"), ("claude", "38%")]
+    };
+    let width = (pill.width() - 25.) / keys.len() as f32;
+    for (i, (key, label)) in keys.iter().enumerate() {
+        let c = pill.left_top() + Vec2::new(22. + (i as f32 + 0.5) * width, 18.);
+        icon(&painter, c, key, p.accent, 15.);
+        painter.text(c + Vec2::new(0., 18.), egui::Align2::CENTER_CENTER, *label, FontId::monospace(9.), p.ink);
+        painter.line_segment([c + Vec2::new(-7., 27.), c + Vec2::new(7., 27.)], Stroke::new(1., p.accent));
+    }
+    painter.text(
+        rect.center_bottom() + Vec2::new(0., -18.),
+        egui::Align2::CENTER_CENTER,
+        "Drag to move · right-click for controls",
+        FontId::proportional(11.),
+        p.dim,
+    );
+}
 pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f32) {
     let s = size / 16.;
     let pt = |x: f32, y: f32| c + Vec2::new(x * s, y * s);
@@ -124,6 +298,33 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
         painter.line_segment([pt(a.0, a.1), pt(b.0, b.1)], stroke);
     };
     match key {
+        "star" => {
+            let mut points = Vec::with_capacity(11);
+            for i in 0..10 {
+                let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.;
+                let radius = if i % 2 == 0 { 8. } else { 3.5 };
+                points.push(c + Vec2::angled(a) * radius * s);
+            }
+            points.push(points[0]);
+            painter.add(egui::Shape::line(points, stroke));
+        }
+        "orbit" => {
+            let points = (0..=24)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 24.;
+                    c + Vec2::new(a.cos() * 8. * s, a.sin() * 5. * s)
+                })
+                .collect();
+            painter.add(egui::Shape::line(points, stroke));
+            painter.circle_filled(pt(6., -4.), 1.8 * s, color);
+        }
+        "sparkle" => {
+            line((0., -8.), (0., 8.));
+            line((-8., 0.), (8., 0.));
+            line((-4., -4.), (4., 4.));
+            line((-4., 4.), (4., -4.));
+            painter.circle_filled(c, 2. * s, color);
+        }
         "cpu" | "gpu" => {
             painter.rect_stroke(
                 Rect::from_center_size(c, Vec2::splat(10. * s)),

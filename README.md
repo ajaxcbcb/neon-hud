@@ -2,7 +2,7 @@
 
 A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
 
-A [native Rust desktop preview](src-native/README.md) is in development on `codex/native-desktop`: a directly drawn floating pill and separate fixed settings tabs, without a scrolling dashboard. It uses a separate preview profile. The release and verification status below distinguish the installed WebView version from this new renderer.
+A [native Rust desktop preview](src-native/README.md) is in development on `codex/native-desktop`: a directly drawn floating pill and custom neon settings frame with three fixed setup steps, without a scrolling dashboard. It uses a separate preview profile. The release and verification status below distinguish the installed WebView version from this new renderer.
 
 [Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.4.md)
 

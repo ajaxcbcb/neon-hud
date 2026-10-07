@@ -30,6 +30,7 @@ fn main() -> eframe::Result<()> {
     }
     let args: Vec<String> = std::env::args().collect();
     let smoke = args.iter().any(|a| a == "--smoke");
+    let smoke_page = args.iter().find_map(|a| a.strip_prefix("--smoke-page=").and_then(|v| v.parse::<usize>().ok())).unwrap_or(0).min(3);
     let minimized = args.iter().any(|a| a == "--minimized") && !smoke;
     let dir = match desktop::profile_dir(smoke) {
         Ok(d) => d,
@@ -54,7 +55,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Neon HUD Native",
         options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, dir, smoke, minimized)))),
+        Box::new(move |cc| Ok(Box::new(App::new(cc, dir, smoke, minimized, smoke_page)))),
     )
 }
 
@@ -83,6 +84,7 @@ struct App {
     settings: bool,
     details: bool,
     page: usize,
+    preferences_tab: usize,
     drive_page: usize,
     selected: String,
     hover: Option<(String, Pos2)>,
@@ -100,7 +102,7 @@ struct App {
     position_hold: Instant,
 }
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>, dir: PathBuf, smoke: bool, minimized: bool) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, dir: PathBuf, smoke: bool, minimized: bool, smoke_page: usize) -> Self {
         let ctx = &cc.egui_ctx;
         ctx.set_embed_viewports(false);
         Palette::new("circuit").apply(ctx);
@@ -141,8 +143,9 @@ impl App {
             hidden,
             paused: false,
             settings: smoke,
-            details: smoke,
-            page: 0,
+            details: smoke && smoke_page == 0,
+            page: if smoke { smoke_page.min(2) } else { 0 },
+            preferences_tab: usize::from(smoke && smoke_page == 3),
             drive_page: 0,
             selected: "cpu".into(),
             hover: None,
@@ -703,32 +706,73 @@ impl App {
             ViewportId::from_hash_of("settings"),
             ViewportBuilder::default()
                 .with_title("Neon HUD · Settings")
-                .with_inner_size([620., 460.])
+                .with_inner_size([740., 680.])
                 .with_resizable(false)
+                .with_decorations(false)
+                .with_transparent(true)
                 .with_position(if self.smoke {
-                    [60., 160.]
+                    [250., 60.]
                 } else {
-                    [200., 180.]
+                    [120., 60.]
                 }),
             |ctx, _| {
                 if ctx.input(|i| i.viewport().close_requested()) {
                     self.settings = false;
                 }
-                egui::TopBottomPanel::top("settings-top")
-                    .frame(egui::Frame::new().fill(p.bg).inner_margin(16))
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
                     .show(ctx, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.heading("NEON / HUD");
-                            ui.label(
-                                egui::RichText::new("NATIVE PREVIEW")
-                                    .small()
-                                    .color(p.accent),
-                            );
+                        let r = ui.max_rect();
+                        let at = |x, y| r.min + Vec2::new(x, y);
+                        let border = egui::Stroke::new(1., p.dim.gamma_multiply(0.4));
+                        ui.painter().rect_filled(r.shrink(1.), 18, p.bg);
+                        ui.painter().rect_stroke(r.shrink(1.), 18, border, egui::StrokeKind::Inside);
+                        let header = Rect::from_min_size(at(1., 1.), Vec2::new(738., 58.));
+                        ui.painter().rect_filled(header, 17, p.panel);
+                        ui.painter().line_segment([at(1., 59.), at(739., 59.)], border);
+                        let drag = Rect::from_min_size(at(0., 0.), Vec2::new(688., 58.));
+                        if ui.interact(drag, ui.id().with("settings-drag"), Sense::drag()).drag_started() {
+                            ctx.send_viewport_cmd(ViewportCommand::StartDrag);
+                        }
+                        ui.painter().rect_filled(Rect::from_min_size(at(28., 19.), Vec2::splat(23.)), 5, p.pop);
+                        ui.painter().rect_filled(Rect::from_min_size(at(26., 17.), Vec2::splat(23.)), 5, p.accent);
+                        ui.painter().text(at(37., 29.), egui::Align2::CENTER_CENTER, "N", FontId::proportional(19.), p.bg);
+                        ui.painter().text(at(58., 29.), egui::Align2::LEFT_CENTER, "NEON HUD", FontId::monospace(13.), p.ink);
+                        ui.painter().text(at(681., 29.), egui::Align2::RIGHT_CENTER, "PERSONAL COMMAND CENTER", FontId::monospace(9.), p.dim);
+                        let close = Rect::from_min_size(at(698., 15.), Vec2::splat(28.));
+                        if ui.interact(close, ui.id().with("settings-close"), Sense::click()).on_hover_text("Return to HUD").clicked() {
+                            self.settings = false;
+                        }
+                        ui.painter().text(close.center(), egui::Align2::CENTER_CENTER, "×", FontId::proportional(22.), p.dim);
+                        for (i, name) in ["Appearance", "Connections", "Preferences"].iter().enumerate() {
+                            let tab = Rect::from_min_size(at(28. + i as f32 * 164., 77.), Vec2::new(154., 40.));
+                            let selected = self.page == i;
+                            let response = ui.interact(tab, ui.id().with(("setup-step", i)), Sense::click());
+                            if selected {
+                                ui.painter().rect_filled(tab.translate(Vec2::new(3., 4.)), 9, p.pop);
+                                ui.painter().rect_filled(tab, 9, p.accent);
+                            } else if response.hovered() {
+                                ui.painter().rect_filled(tab, 9, p.panel);
+                            }
+                            let ink = if selected { p.bg } else { p.dim };
+                            let c = tab.left_center() + Vec2::new(23., 0.);
+                            ui.painter().circle_stroke(c, 11., egui::Stroke::new(1., ink));
+                            ui.painter().text(c, egui::Align2::CENTER_CENTER, format!("{}", i + 1), FontId::monospace(11.), ink);
+                            ui.painter().text(tab.left_center() + Vec2::new(42., 0.), egui::Align2::LEFT_CENTER, *name, FontId::proportional(12.), ink);
+                            if response.clicked() { self.page = i; }
+                        }
+                        let content = Rect::from_min_size(at(28., 140.), Vec2::new(684., 474.));
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(content), |ui| {
+                            ui.set_clip_rect(content);
+                            ui.add_enabled_ui(self.writable, |ui| match self.page {
+                                0 => self.appearance(ui, ctx),
+                                1 => self.connections(ui),
+                                _ => self.preferences(ui, ctx),
+                            });
                         });
-                    });
-                egui::TopBottomPanel::bottom("settings-bottom")
-                    .frame(egui::Frame::new().fill(p.panel).inner_margin(12))
-                    .show(ctx, |ui| {
+                        let footer = Rect::from_min_size(at(1., 623.), Vec2::new(738., 56.));
+                        ui.painter().rect_filled(footer, 17, p.panel);
+                        ui.painter().line_segment([at(1., 623.), at(739., 623.)], border);
                         let status = if !self.status.is_empty() {
                             self.status.clone()
                         } else if !self.writable {
@@ -736,59 +780,29 @@ impl App {
                         } else if self.save_pending || self.saved < self.revision {
                             "Saving preferences…".into()
                         } else {
-                            "Preferences saved · separate preview profile".into()
+                            "LOCAL FIRST · SMALL BY DESIGN · SAVED".into()
                         };
-                        ui.label(egui::RichText::new(status).small());
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(format!("{} mode", self.mode.name()))
-                                    .small()
-                                    .color(p.accent),
-                            );
-                            if ui.button("Done").clicked() {
-                                self.profile["completed"] = json!(true);
-                                self.dirty();
+                        let short: String = status.chars().take(47).collect();
+                        let status_rect = Rect::from_min_size(at(28., 640.), Vec2::new(340., 25.));
+                        ui.painter().text(status_rect.left_center(), egui::Align2::LEFT_CENTER, short, FontId::monospace(9.), p.dim);
+                        ui.interact(status_rect, ui.id().with("save-status"), Sense::hover()).on_hover_text(status);
+                        let back = Rect::from_min_size(at(407., 638.), Vec2::new(114., 32.));
+                        ui.painter().text(back.center(), egui::Align2::CENTER_CENTER, "Return to HUD", FontId::proportional(12.), p.accent);
+                        if ui.interact(back, ui.id().with("return-hud"), Sense::click()).clicked() { self.settings = false; }
+                        let next = Rect::from_min_size(at(540., 635.), Vec2::new(170., 36.));
+                        ui.painter().rect_filled(next.translate(Vec2::new(3., 4.)), 7, p.pop);
+                        ui.painter().rect_filled(next, 7, p.accent);
+                        let label = match self.page { 0 => "Next: Connect sources  →", 1 => "Next: Preferences  →", _ => "Ready: Show HUD  →" };
+                        ui.painter().text(next.center(), egui::Align2::CENTER_CENTER, label, FontId::proportional(12.), p.bg);
+                        if ui.interact(next, ui.id().with("setup-next"), Sense::click()).clicked() {
+                            if self.page < 2 { self.page += 1; } else {
+                                if self.writable {
+                                    self.profile["completed"] = json!(true);
+                                    self.dirty();
+                                }
                                 self.settings = false;
                             }
-                        });
-                    });
-                egui::SidePanel::left("settings-tabs")
-                    .exact_width(132.)
-                    .resizable(false)
-                    .frame(egui::Frame::new().fill(p.panel).inner_margin(12))
-                    .show(ctx, |ui| {
-                        ui.add_space(4.);
-                        for (i, name) in ["Appearance", "Metrics", "Connections", "Startup"]
-                            .iter()
-                            .enumerate()
-                        {
-                            if ui
-                                .add_sized(
-                                    [108., 38.],
-                                    egui::Button::new(*name).selected(self.page == i),
-                                )
-                                .clicked()
-                            {
-                                self.page = i;
-                            }
-                            ui.add_space(5.);
                         }
-                        ui.add_space(18.);
-                        ui.label(
-                            egui::RichText::new("Small windows.\nBig personality.")
-                                .small()
-                                .color(p.dim),
-                        );
-                    });
-                egui::CentralPanel::default()
-                    .frame(egui::Frame::new().fill(p.bg).inner_margin(20))
-                    .show(ctx, |ui| {
-                        ui.add_enabled_ui(self.writable, |ui| match self.page {
-                            0 => self.appearance(ui, ctx),
-                            1 => self.metrics(ui),
-                            2 => self.connections(ui),
-                            _ => self.startup_page(ui),
-                        });
                     });
             },
         );
@@ -800,72 +814,79 @@ impl App {
             self.dirty();
         }
     }
-    fn appearance(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.heading("Make it yours");
-        ui.label("A tiny instrument, floating over your desktop.");
-        ui.add_space(16.);
-        ui.horizontal(|ui| {
-            for (key, label) in [
-                ("circuit", "Circuit"),
-                ("cyberpunk", "Cyberpunk"),
-                ("aurora", "Aurora"),
-            ] {
-                let p = Palette::new(key);
-                if ui
-                    .add(
-                        egui::Button::new(egui::RichText::new(label).color(p.accent))
-                            .min_size(Vec2::new(105., 38.))
-                            .selected(text(&self.profile, "theme") == key),
-                    )
-                    .clicked()
-                {
-                    self.profile["theme"] = json!(key);
-                    self.dirty();
-                }
+    fn appearance(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context) {
+        let p = self.palette();
+        let origin = ui.max_rect().min;
+        let at = |x, y| origin + Vec2::new(x, y);
+        for x in (0..684).step_by(18) {
+            for y in (0..474).step_by(18) {
+                ui.painter().circle_filled(at(x as f32, y as f32), 0.6, p.dim.gamma_multiply(0.18));
             }
-        });
-        ui.add_space(16.);
-        ui.horizontal(|ui| {
-            ui.label("Pill size");
-            for (key, label) in [("compressed", "Tiny · 160"), ("compact", "Regular · 280")] {
-                if ui
-                    .selectable_label(text(&self.profile, "size") == key, label)
-                    .clicked()
-                {
-                    self.profile["size"] = json!(key);
-                    self.dirty();
-                    self.resize(ctx);
-                }
+        }
+        ui.painter().text(at(0., 0.), egui::Align2::LEFT_TOP, "STEP 01 / TUNE YOUR ORBIT", FontId::monospace(10.), p.accent);
+        ui.painter().text(at(0., 24.), egui::Align2::LEFT_TOP, "Tiny HUD.", FontId::proportional(48.), p.ink);
+        ui.painter().text(at(0., 70.), egui::Align2::LEFT_TOP, "Big energy", FontId::proportional(48.), p.accent);
+        paint::icon(ui.painter(), at(271., 91.), "sparkle", p.pop, 27.);
+        ui.painter().text(at(0., 133.), egui::Align2::LEFT_TOP, "Your machine. Your AI. Your tiny neon playground.", FontId::proportional(12.), p.dim);
+        let sticker = Rect::from_min_size(at(574., 32.), Vec2::new(102., 52.));
+        ui.painter().rect_filled(sticker.translate(Vec2::new(3., 4.)), 26, p.accent);
+        ui.painter().rect_filled(sticker, 26, p.pop);
+        ui.painter().text(sticker.center(), egui::Align2::CENTER_CENTER, "SMALL\nBUT LOUD ↗", FontId::monospace(11.), p.bg);
+        ui.painter().text(at(0., 171.), egui::Align2::LEFT_TOP, "CHOOSE YOUR ATMOSPHERE", FontId::monospace(10.), p.dim);
+        for (i, (key, label, subtitle, icon)) in [
+            ("circuit", "Neon Circuit", "Acid lime + candy pink. Electric.", "cpu"),
+            ("cyberpunk", "Cyberpunk Night", "Hot pink + cyan. After hours.", "star"),
+            ("aurora", "Aurora", "Mint + lavender. A softer glow.", "orbit"),
+        ].iter().enumerate() {
+            let rect = Rect::from_min_size(at(0., 192. + i as f32 * 63.), Vec2::new(294., 54.));
+            if paint::choice_card(ui, rect, key, label, subtitle, icon, text(&self.profile, "theme") == *key, Palette::new(key)).clicked() {
+                self.profile["theme"] = json!(key);
+                self.dirty();
             }
-        });
+        }
+        ui.painter().text(at(0., 390.), egui::Align2::LEFT_TOP, "HOW MUCH MISCHIEF?", FontId::monospace(10.), p.dim);
+        for (i, (key, label, icon)) in [("quiet", "Quiet", "orbit"), ("playful", "Playful", "star"), ("chaotic", "Chaos!", "sparkle")].iter().enumerate() {
+            let rect = Rect::from_min_size(at(i as f32 * 101., 408.), Vec2::new(92., 56.));
+            if paint::motion_card(ui, rect, key, label, icon, text(&self.profile, "motion") == *key, p).clicked() {
+                self.profile["motion"] = json!(key);
+                self.dirty();
+            }
+        }
+        paint::appearance_preview(ui, Rect::from_min_size(at(314., 172.), Vec2::new(370., 292.)), p, text(&self.profile, "size") == "compressed");
+    }
+    fn preferences(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.colored_label(self.palette().accent, "STEP 03 / MAKE IT FIT YOUR DAY");
         ui.add_space(12.);
         ui.horizontal(|ui| {
-            ui.label("Personality");
-            for key in ["chaotic", "playful", "quiet"] {
-                if ui
-                    .selectable_label(text(&self.profile, "motion") == key, key)
-                    .clicked()
-                {
-                    self.profile["motion"] = json!(key);
-                    self.dirty();
+            for (i, name) in ["Instruments", "Startup & updates"].iter().enumerate() {
+                if ui.selectable_label(self.preferences_tab == i, *name).clicked() {
+                    self.preferences_tab = i;
                 }
             }
         });
-        self.bool_setting(ui, "reducedMotion", "Reduce motion");
-        let old = flag(&self.profile, "alwaysOnTop");
-        self.bool_setting(ui, "alwaysOnTop", "Keep HUD above other windows");
-        if old != flag(&self.profile, "alwaysOnTop") {
-            ctx.send_viewport_cmd_to(
-                ViewportId::ROOT,
-                ViewportCommand::WindowLevel(if flag(&self.profile, "alwaysOnTop") {
-                    egui::WindowLevel::AlwaysOnTop
-                } else {
-                    egui::WindowLevel::Normal
-                }),
-            );
+        ui.separator();
+        if self.preferences_tab == 0 {
+            self.metrics(ui);
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Pill size");
+                for (key, label) in [("compressed", "Tiny · 160"), ("compact", "Regular · 280")] {
+                    if ui.selectable_label(text(&self.profile, "size") == key, label).clicked() {
+                        self.profile["size"] = json!(key);
+                        self.dirty();
+                        self.resize(ctx);
+                    }
+                }
+            });
+            self.bool_setting(ui, "reducedMotion", "Reduce motion");
+        } else {
+            self.startup_page(ui);
+            let old = flag(&self.profile, "alwaysOnTop");
+            self.bool_setting(ui, "alwaysOnTop", "Keep HUD above other windows");
+            if old != flag(&self.profile, "alwaysOnTop") {
+                ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::WindowLevel(if flag(&self.profile, "alwaysOnTop") { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal }));
+            }
         }
-        ui.add_space(18.);
-        ui.label(egui::RichText::new("Drag the dots. Double click to compress.\nRight click for controls. Escape hides to tray.").small().color(self.palette().dim));
     }
     fn metrics(&mut self, ui: &mut egui::Ui) {
         ui.heading("Your instruments");
@@ -955,6 +976,8 @@ impl App {
         });
     }
     fn connections(&mut self, ui: &mut egui::Ui) {
+        ui.colored_label(self.palette().accent, "STEP 02 / CONNECT YOUR SOURCES");
+        ui.add_space(12.);
         ui.heading("AI connections");
         let codex = self.usage("codex");
         let claude = self.usage("claude");
@@ -1059,8 +1082,10 @@ impl App {
             ViewportId::from_hash_of("details"),
             ViewportBuilder::default()
                 .with_title("Neon HUD · Instruments")
-                .with_inner_size([460., 420.])
+                .with_inner_size([460., 460.])
                 .with_resizable(false)
+                .with_decorations(false)
+                .with_transparent(true)
                 .with_position(if self.smoke {
                     [430., 250.]
                 } else {
@@ -1071,14 +1096,23 @@ impl App {
                     self.details = false;
                 }
                 egui::CentralPanel::default()
-                    .frame(egui::Frame::new().fill(p.bg).inner_margin(20))
+                    .frame(egui::Frame::new().fill(p.bg).inner_margin(20).corner_radius(16).stroke(egui::Stroke::new(1., p.dim.gamma_multiply(0.4))))
                     .show(ctx, |ui| {
+                        let (header, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.), Sense::hover());
+                        let drag_rect = Rect::from_min_max(header.min, header.max - Vec2::new(32., 0.));
+                        if ui.interact(drag_rect, ui.id().with("details-drag"), Sense::drag()).drag_started() { ctx.send_viewport_cmd(ViewportCommand::StartDrag); }
+                        ui.painter().text(header.left_center(), egui::Align2::LEFT_CENTER, "NEON / INSTRUMENTS", FontId::monospace(12.), p.accent);
+                        let close = Rect::from_center_size(header.right_center() - Vec2::new(12., 0.), Vec2::splat(24.));
+                        ui.painter().text(close.center(), egui::Align2::CENTER_CENTER, "×", FontId::proportional(20.), p.dim);
+                        if ui.interact(close, ui.id().with("details-close"), Sense::click()).clicked() { self.details = false; }
+                        ui.separator();
                         ui.horizontal(|ui| {
-                            for key in
-                                ["cpu", "gpu", "ram", "network", "storage", "codex", "claude"]
+                            for (key, label) in
+                                [("cpu", "CPU"), ("gpu", "GPU"), ("ram", "RAM"), ("network", "NET"), ("storage", "DRIVES"), ("codex", "CODEX"), ("claude", "CLAUDE")]
                             {
                                 if ui
-                                    .selectable_label(self.selected == key, key.to_uppercase())
+                                    .selectable_label(self.selected == key, label)
+                                    .on_hover_text(key.to_uppercase())
                                     .clicked()
                                 {
                                     self.selected = key.into();

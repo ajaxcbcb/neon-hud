@@ -3,7 +3,7 @@
 ## [0.2.0-alpha.1] - Native desktop preview in development
 
 - Rust/egui/glow renderer with a 160 × 56 compressed pill and 280 × 56 regular pill, native tray controls and separate instrument windows.
-- Fixed settings tabs: Appearance first, Metrics with paged drives, Connections with source feedback, and Startup. No scroll areas.
+- Custom neon settings frame with Appearance, Connections and Preferences steps, theme cards and a sample pill preview. Instruments and Startup choices fit inside Preferences; multiple drives use pages. No scroll areas.
 - Custom neon metric icons, gradient gauges/bars, brief question reactions and motion that quiets under pressure.
 - Separate preview preferences, monitor-relative placement by display identity, debounced saves and opt-in preview startup.
 - Shared Claude bridge readings remain available while preview preferences stay separate. Codex and Claude connectors still use helpers; strict single-process operation and signed native automatic updates remain unfinished.

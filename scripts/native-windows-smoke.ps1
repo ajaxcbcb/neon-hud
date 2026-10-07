@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Executable,
-    [Parameter(Mandatory = $true)][string]$OutputDirectory
+    [Parameter(Mandatory = $true)][string]$OutputDirectory,
+    [ValidateRange(0, 3)][int]$SettingsPage = 0
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
@@ -92,14 +93,14 @@ public static class NativeHudCapture {
 '@
 
 $started = Get-Date
-$process = Start-Process -FilePath $executablePath -ArgumentList '--smoke' -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+$process = Start-Process -FilePath $executablePath -ArgumentList '--smoke', "--smoke-page=$SettingsPage" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 try {
     $deadline = $started.AddSeconds(7)
     $expected = [ordered]@{
         hud = 'Neon HUD Native'
         settings = 'Neon HUD · Settings'
-        instruments = 'Neon HUD · Instruments'
     }
+    if ($SettingsPage -eq 0) { $expected.instruments = 'Neon HUD · Instruments' }
     do {
         Start-Sleep -Milliseconds 200
         $process.Refresh()
@@ -164,6 +165,7 @@ try {
     $receipt = [ordered]@{
         executable = [IO.Path]::GetFileName($executablePath)
         argument = '--smoke'
+        settingsPage = $SettingsPage
         virtualDesktop = [ordered]@{ x = [NativeHudCapture]::GetSystemMetrics(76); y = [NativeHudCapture]::GetSystemMetrics(77); width = [NativeHudCapture]::GetSystemMetrics(78); height = [NativeHudCapture]::GetSystemMetrics(79) }
         visibleWindowsAtCapture = @($visible | ForEach-Object { [pscustomobject]@{ title = $_.Title; rectangle = [pscustomobject]@{ left = $_.Rect.Left; top = $_.Rect.Top; right = $_.Rect.Right; bottom = $_.Rect.Bottom } } })
         captures = @($captures)
