@@ -108,7 +108,8 @@ public static class NativeHudCapture {
 $started = Get-Date
 $arguments = @('--smoke', "--smoke-page=$SettingsPage")
 if ($HoverEdges) { $arguments += '--smoke-hover' }
-$process = Start-Process -FilePath $executablePath -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+# This CI-only foreground capture requires visible windows for real cursor input.
+$process = Start-Process -FilePath $executablePath -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 try {
     $deadline = $started.AddSeconds(7)
     $expected = [ordered]@{
@@ -218,7 +219,7 @@ try {
         Start-Sleep -Milliseconds 200
         $process.Refresh()
     } while (-not $process.HasExited -and (Get-Date) -lt $exitDeadline)
-    if (-not $process.HasExited) { throw 'Native --smoke did not autoexit within 20 seconds after capture' }
+    if (-not $process.HasExited) { throw 'Native --smoke did not autoexit within 35 seconds after capture' }
     if ($process.ExitCode -ne 0) { throw "Native --smoke exited with code $($process.ExitCode)" }
 
     $receipt = [ordered]@{

@@ -63,7 +63,16 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Neon HUD Native",
         options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, dir, smoke, minimized, smoke_page, smoke_hover)))),
+        Box::new(move |cc| {
+            Ok(Box::new(App::new(
+                cc,
+                dir,
+                smoke,
+                minimized,
+                smoke_page,
+                smoke_hover,
+            )))
+        }),
     )
 }
 
@@ -592,7 +601,8 @@ impl App {
                     };
                     if response.hovered() {
                         ui.painter().rect_filled(cell.shrink(1.), 10, p.panel);
-                        self.hover = ctx.input(|i| i.viewport().outer_rect)
+                        self.hover = ctx
+                            .input(|i| i.viewport().outer_rect)
                             .map(|rect| (key.to_string(), rect));
                     }
                     paint::icon(ui.painter(), c, key, color, 15.);
@@ -1570,8 +1580,12 @@ impl App {
         }
         let scale = desktop::coordinate_scale(ctx.pixels_per_point());
         let Some(placement) = hover_placement(
-            [hud.min.x as f64 * scale, hud.min.y as f64 * scale,
-                hud.width() as f64 * scale, hud.height() as f64 * scale],
+            [
+                hud.min.x as f64 * scale,
+                hud.min.y as f64 * scale,
+                hud.width() as f64 * scale,
+                hud.height() as f64 * scale,
+            ],
             [248. * scale, 110. * scale],
             8. * scale,
             &self.screens,
@@ -1657,7 +1671,9 @@ impl eframe::App for App {
         self.settings_window(ctx);
         self.detail_window(ctx);
         self.hover_window(ctx);
-        if self.smoke && self.started.elapsed() > Duration::from_secs(if self.smoke_hover { 30 } else { 12 }) {
+        if self.smoke
+            && self.started.elapsed() > Duration::from_secs(if self.smoke_hover { 30 } else { 12 })
+        {
             self.quitting = true;
         }
         self.persist();

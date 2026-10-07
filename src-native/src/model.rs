@@ -24,7 +24,10 @@ pub fn hover_placement(
     gap: f64,
     screens: &[Screen],
 ) -> Option<HoverPlacement> {
-    if !hud.iter().chain(requested_size.iter()).all(|v| v.is_finite())
+    if !hud
+        .iter()
+        .chain(requested_size.iter())
+        .all(|v| v.is_finite())
         || !gap.is_finite()
         || gap < 0.
         || hud[2] <= 0.
@@ -35,16 +38,12 @@ pub fn hover_placement(
     }
     let center = [hud[0] + hud[2] / 2., hud[1] + hud[3] / 2.];
     let overlap = |s: &Screen| {
-        ((hud[0] + hud[2]).min(s.origin[0] + s.size[0]) - hud[0].max(s.origin[0]))
-            .max(0.)
-            * ((hud[1] + hud[3]).min(s.origin[1] + s.size[1])
-                - hud[1].max(s.origin[1]))
-            .max(0.)
+        ((hud[0] + hud[2]).min(s.origin[0] + s.size[0]) - hud[0].max(s.origin[0])).max(0.)
+            * ((hud[1] + hud[3]).min(s.origin[1] + s.size[1]) - hud[1].max(s.origin[1])).max(0.)
     };
     let distance = |s: &Screen| {
         (center[0] - center[0].clamp(s.origin[0], s.origin[0] + s.size[0])).powi(2)
-            + (center[1] - center[1].clamp(s.origin[1], s.origin[1] + s.size[1]))
-                .powi(2)
+            + (center[1] - center[1].clamp(s.origin[1], s.origin[1] + s.size[1])).powi(2)
     };
     let screen = screens
         .iter()
@@ -339,16 +338,36 @@ mod tests {
     fn hover_opens_inward_at_each_edge_and_corner() {
         let screen = hover_screen([0., 0.], [1920., 1080.], 1.);
         for (x, y) in [
-            (820., 0.), (820., 1024.), (0., 512.), (1640., 512.),
-            (0., 0.), (1640., 0.), (0., 1024.), (1640., 1024.),
+            (820., 0.),
+            (820., 1024.),
+            (0., 512.),
+            (1640., 512.),
+            (0., 0.),
+            (1640., 0.),
+            (0., 1024.),
+            (1640., 1024.),
         ] {
-            let p = hover_placement([x, y, 280., 56.], [248., 110.], 8., std::slice::from_ref(&screen)).unwrap();
+            let p = hover_placement(
+                [x, y, 280., 56.],
+                [248., 110.],
+                8.,
+                std::slice::from_ref(&screen),
+            )
+            .unwrap();
             assert!(p.position[0] >= 8. && p.position[0] + p.size[0] <= 1912.);
             assert!(p.position[1] >= 8. && p.position[1] + p.size[1] <= 1072.);
-            if x == 0. { assert!(p.position[0] >= x + 280. + 8.); }
-            if x == 1640. { assert!(p.position[0] + p.size[0] <= x - 8.); }
-            if y == 0. { assert!(p.position[1] >= y + 56. + 8.); }
-            if y == 1024. { assert!(p.position[1] + p.size[1] <= y - 8.); }
+            if x == 0. {
+                assert!(p.position[0] >= x + 280. + 8.);
+            }
+            if x == 1640. {
+                assert!(p.position[0] + p.size[0] <= x - 8.);
+            }
+            if y == 0. {
+                assert!(p.position[1] >= y + 56. + 8.);
+            }
+            if y == 1024. {
+                assert!(p.position[1] + p.size[1] <= y - 8.);
+            }
         }
     }
     #[test]
@@ -374,7 +393,13 @@ mod tests {
         for width in [160., 280.] {
             for x in (100..=900).step_by(40) {
                 for y in (-100..=500).step_by(40) {
-                    let p = hover_placement([x as f64, y as f64, width, 56.], [248., 110.], 8., std::slice::from_ref(&screen)).unwrap();
+                    let p = hover_placement(
+                        [x as f64, y as f64, width, 56.],
+                        [248., 110.],
+                        8.,
+                        std::slice::from_ref(&screen),
+                    )
+                    .unwrap();
                     assert!(p.position[0] >= 108. && p.position[0] + p.size[0] <= 892.);
                     assert!(p.position[1] >= -92. && p.position[1] + p.size[1] <= 492.);
                 }
