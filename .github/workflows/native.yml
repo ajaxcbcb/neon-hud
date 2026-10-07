@@ -27,12 +27,23 @@ on:
         description: Publish a signed native preview after all checks pass
         type: boolean
         default: false
+      proof:
+        description: Test the published alpha.3 to alpha.4 signed GUI update only
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  installed-update:
+    if: github.event_name == 'workflow_dispatch' && inputs.proof
+    uses: ./.github/workflows/native-update-proof.yml
+    with:
+      from: v0.2.0-alpha.3
+      to: v0.2.0-alpha.4
   native-preview:
+    if: github.event_name != 'workflow_dispatch' || !inputs.proof
     strategy:
       fail-fast: false
       matrix:

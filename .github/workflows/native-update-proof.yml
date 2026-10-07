@@ -1,6 +1,14 @@
 name: Native signed update proof
 
 on:
+  workflow_call:
+    inputs:
+      from:
+        type: string
+        default: v0.2.0-alpha.3
+      to:
+        type: string
+        default: v0.2.0-alpha.4
   workflow_dispatch:
     inputs:
       from:
