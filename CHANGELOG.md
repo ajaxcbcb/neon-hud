@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — native Nook
+## [0.2.0-alpha.6] - 2026-10-07
 
 - Controls open on secondary press so a hover transition cannot cancel a release-based right-click. A physical held-button regression checks opening before release.
 - Existing and imported profiles retain their pill presentation on first Nook upgrade; fresh profiles start in Nook, and explicit choices survive restart. Existing utility data and settings are preserved.
@@ -12,7 +12,9 @@
 - Instruments and AI tabs retain numerical system readings, gradient stress bars, history, five-hour reset windows and measured allowance drain. Local notes, tasks, deadline timers and file references use separate bounded, recoverable storage.
 - Saved Codex connection intent and last-known allowance survive retry failures. Stale readings show their original timestamp and connection state; explicit disconnect clears them.
 - Bridge migration recognises owned Windows version folders and macOS versioned app bundles while preserving foreign Claude configuration.
-- Added source regressions for timer/state migration, camera frame bounds, calendar recurrence, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls, saved note/task/timer checks and native frame captures. Alpha.6 exact-source Windows/Mac acceptance passed; signed publication, public GUI update and target installation remain pending. Alpha.5's public updater proof failed replacement Controls. Exact motion timing is unknown. This section is not a published-release claim.
+- Added source regressions for timer/state migration, camera frame bounds, calendar recurrence, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls, saved note/task/timer checks and native frame captures. Windows/Mac acceptance, signed publication and the public alpha.4-to-alpha.6 GUI update passed, including retained Pill layout, settings, startup preference and replacement Controls. Target installation is checked separately. Exact reference motion timing is unmeasured.
+
+Alpha.5's public updater proof failed replacement Controls and legacy Pill retention. Alpha.6 repairs both paths.
 
 ## [0.2.0-alpha.4] - 2026-10-07
 
