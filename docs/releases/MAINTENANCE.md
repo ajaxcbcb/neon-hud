@@ -18,6 +18,8 @@ Dispatch [native.yml](../../.github/workflows/native.yml) with `development_sign
 
 The `native-windows-self-signed-development` artifact contains the complete license-bearing ZIP, public `.cer`, signature receipt and checksums. Its honest publisher label is **Neon HUD Development**. Do not import its certificate into a user's trust stores or describe it as publicly trusted. Authenticode integrity, updater authenticity, Defender determination and observed target runtime are separate checks. This test artifact is not attached to a production release or written to an update feed. No private key or PFX is exported.
 
+Timestamping uses [DigiCert's documented RFC3161 endpoint](https://knowledge.digicert.com/solution/troubleshooting-timestamping-problems) with `/tr http://timestamp.digicert.com /td SHA256`; SignTool verifies the signed timestamp response. The job verifies the packaged executable/certificate hashes and records public signature metadata and archive checksums in its log.
+
 For a future trusted release, sign the final Windows executable before packaging and generating the updater manifest/hashes, then repeat publication and actual update acceptance. A development signature does not resolve a behavioral quarantine; keep affected target installation/launch blocked while that determination is unresolved.
 
 ## Legacy WebView channel

@@ -2,8 +2,7 @@
 param(
     [Parameter(Mandatory)][string]$Executable,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$SourceCommit,
-    [uri]$TimestampServer = 'https://timestamp.digicert.com'
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$SourceCommit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,7 +15,10 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or
     throw 'Development signing is restricted to an isolated GitHub Windows runner.'
 }
 if ($SourceCommit -ne $env:GITHUB_SHA) { throw 'Source commit differs from the accepted checkout.' }
-if ($TimestampServer.Scheme -ne 'https') { throw 'The timestamp service must use HTTPS.' }
+# DigiCert documents this RFC3161 endpoint for SignTool. The signed response is
+# verified with /pa /all /v /tw; no arbitrary timestamp URL is accepted.
+# https://knowledge.digicert.com/solution/troubleshooting-timestamping-problems
+$timestampServer = 'http://timestamp.digicert.com'
 
 $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\') + '\'
 $temporaryRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
@@ -55,7 +57,7 @@ try {
     $certificateThumbprint = $certificate.Thumbprint
     Export-Certificate -Cert $certificate -FilePath $publicCertificate -Type CERT | Out-Null
     & $signTool.FullName sign /fd SHA256 /sha1 $certificateThumbprint /s My `
-        /tr $TimestampServer.AbsoluteUri /td SHA256 $exe
+        /tr $timestampServer /td SHA256 $exe
     if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing or RFC3161 timestamp failed.' }
 
     # A self-signed development leaf is not publicly trusted. Temporary trust is
@@ -112,6 +114,7 @@ $receipt = [ordered]@{
     FileDigest = 'SHA256'
     TimestampProtocol = 'RFC3161'
     TimestampDigest = 'SHA256'
+    TimestampServer = $timestampServer
     TimestampSigner = $signature.TimeStamperCertificate.Subject
     Verification = 'SignTool /pa /all /v /tw and Get-AuthenticodeSignature Valid with temporary CI-only development trust'
     PubliclyTrustedPublisher = $false
@@ -122,8 +125,28 @@ $receipt = [ordered]@{
 }
 $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $bundle 'signing-receipt.json') -Encoding utf8
 Compress-Archive -LiteralPath $bundle -DestinationPath (Join-Path $output "$bundleName.zip")
+$archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $output "$bundleName.zip"))
+try {
+    foreach ($binding in @{
+        'neon-hud-native.exe' = $receipt.ExecutableSHA256
+        'Neon-HUD-Development.cer' = $receipt.CertificateSHA256
+    }.GetEnumerator()) {
+        $entry = $archive.GetEntry("$bundleName/$($binding.Key)")
+        if (-not $entry) { throw "Signed bundle is missing $($binding.Key)" }
+        $stream = $entry.Open()
+        try {
+            $archiveHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream)).ToLowerInvariant()
+            if ($archiveHash -ne $binding.Value) { throw "Signed bundle hash differs for $($binding.Key)" }
+        }
+        finally { $stream.Dispose() }
+    }
+    Write-Output "Signed bundle entries verified: $($archive.Entries.Count)"
+}
+finally { $archive.Dispose() }
 Copy-Item -LiteralPath (Join-Path $bundle 'signing-receipt.json') -Destination $output
 Get-ChildItem -LiteralPath $output -File | ForEach-Object {
     '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
 } | Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
 Write-Output 'Self-signed development package verified; ephemeral certificate and key removed.'
+$receipt | ConvertTo-Json -Depth 5 | Write-Output
+Get-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') | Write-Output
