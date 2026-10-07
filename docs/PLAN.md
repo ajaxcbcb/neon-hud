@@ -4,13 +4,13 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: v0.1.4 dragging/compression source is implemented; cloud validation and final review are next. Installed v0.1.3 and its enabled update preferences remain preserved. Local heavy validation/runtime installation awaits resource admission. Actual tray-menu restoration and strict single-process operation remain open. Priority P1.
+Status: v0.1.4 dragging/compression is implemented, independently reviewed, verified in Windows/Mac cloud CI and publicly released with verified signatures/digests. Installed v0.1.3 and its enabled update preferences remain preserved. The earlier runtime reservation expired before any mutation; renewed central CPU samples exceeded the admission threshold, so local installation is held. Actual tray-menu restoration and strict single-process operation remain open. Priority P1.
 
-Next: Verify drag/compression in existing cloud frontend and Windows/Mac CI, then inspect and install only with fresh runtime admission. Do not activate the automatic-update manifest before replacement gates. Verify actual tray-menu restoration/Quit and profile parity outside the Windows packaged host. Native connector/updater feasibility, GPU accuracy/frame rate and full-process resource measurements remain separate checks.
+Next: Upgrade and verify drag/compression/profile retention in the own installed HUD only with fresh runtime admission. Keep the updater manifest on 0.1.3 until replacement gates. Verify actual tray-menu restoration/Quit and profile parity outside the Windows packaged host. Native connector/updater feasibility, GPU accuracy/frame rate and full-process resource measurements remain separate checks.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
-| Dragging and compression | Coordinator | Final source review | Light source / cloud CI | Implemented; geometry/profile checks and packages pending; installed0.1.3 unchanged |
+| Dragging and compression | Coordinator | Installed runtime check | Light source / cloud CI / own-app check | Source/review complete; exact source1a16805 cloud CI37583511703 passed; public0.1.4 artifacts/signatures/digests verified; installed0.1.3 unchanged |
 | GPU provider and recovery | Backend worker / coordinator | Independent review | Source write | Complete; review findings resolved |
 | Frontend integration | Coordinator | GPU contract | Light local | Complete; 63 tests, zero check warnings/errors, build and audit |
 | Native tests and packages | GitHub CI | Source integration | Cloud | Complete; source 44b579e2, 29 Windows / 26 Mac tests, signed payloads and Windows launch/minimize |

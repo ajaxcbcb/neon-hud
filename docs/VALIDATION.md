@@ -5,8 +5,10 @@ Checked on 7 October 2026.
 ## 0.1.4 floating placement and compression
 
 - Source adds a native drag grip, physical-pixel keyboard nudging, a 160 × 56 compressed window and persisted custom placement. Geometry tests cover DPI changes, removed displays, duplicate display names and popover growth at all four edges independently of a corner preset.
-- Independent source review identified preset-dependent popover movement and ambiguous identical-monitor restoration; both were repaired. Final review and cloud frontend/native/package checks are pending.
-- Rust formatting is queued in cloud CI because this shell has no Rust toolchain. Local heavy validation and installation are held by shared host admission. Installed v0.1.3 and existing profiles remain unchanged. Dragging, compressed appearance and restart persistence need an admitted runtime check; no new runtime or single-process proof is claimed.
+- Independent source review passed after repairing preset-dependent popover movement, ambiguous identical-monitor restoration and hover resizing during native dragging.
+- [Final CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37583511703), source `1a16805dcc802fac32f1d60a3e417418879e3c16`, passed frontend checks/tests/build with zero Svelte errors/warnings and zero audit vulnerabilities, Rust formatting, 30 Windows and 27 Mac tests, both signed platform packages and Windows launch/minimize-to-tray.
+- The [public v0.1.4 preview](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.4) contains all five exact-run artifacts and SHA256SUMS.txt. All six public asset digests match locally, and both updater payload signatures and trusted comments verify against the existing public key. Windows setup SHA-256: `d4a56f3dcba5f66cb6fb6c25d0a9bdd2192189f1c1bd648278ddd60d736fe7ae`.
+- Local upgrade and dragging/compressed appearance/restart persistence await fresh resource admission. The earlier reservation expired before any shutdown, install or input. Renewed central CPU samples were 66% and 99%, so admission was held. Installed v0.1.3 and existing profiles are preserved; the updater manifest still targets 0.1.3. No new installed runtime or single-process proof is claimed.
 
 ## 0.1.3 quiet updates and retained profiles
 
