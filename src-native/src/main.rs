@@ -180,6 +180,8 @@ struct App {
     last_update: Instant,
     applying_update: bool,
     update_acknowledged: bool,
+    update_trace_enabled: bool,
+    update_ready_traced: bool,
     profile: Value,
     system: Value,
     providers: Value,
@@ -293,6 +295,9 @@ impl App {
             last_update: Instant::now() - Duration::from_secs(6 * 3600),
             applying_update: false,
             update_acknowledged: false,
+            update_trace_enabled: std::env::var_os("NEON_HUD_UPDATE_TRACE").as_deref()
+                == Some(std::ffi::OsStr::new("1")),
+            update_ready_traced: false,
             profile: json!({"theme":"circuit","size":"compact","motion":"playful","alwaysOnTop":true,"reducedMotion":false,"metrics":{"cpu":true,"gpu":true,"ram":true,"network":true,"storage":true,"ai":true},"resources":{"adaptive":true,"samplingMs":1000},"storageDriveIds":[]}),
             system: Value::Null,
             providers: Value::Null,
@@ -1504,6 +1509,7 @@ impl App {
                 )),
             );
         }
+        let mut restart_visible = false;
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
@@ -1515,13 +1521,13 @@ impl App {
                 self.check_updates();
             }
             if self.update_stage.is_some() {
-                if ui
-                    .add_enabled(
-                        !self.update_busy && self.writable && !self.quitting,
-                        egui::Button::new("Restart and update"),
-                    )
-                    .clicked()
-                {
+                let restart = ui.add_enabled(
+                    !self.update_busy && self.writable && !self.quitting,
+                    egui::Button::new("Restart and update"),
+                );
+                restart_visible = restart.enabled();
+                if restart.clicked() {
+                    self.trace_update("restart_requested");
                     self.applying_update = true;
                     self.quitting = true;
                     self.update_status = "Saving your settings before restarting…".into();
@@ -1532,6 +1538,10 @@ impl App {
                 }
             }
         });
+        if restart_visible && !self.update_ready_traced {
+            self.trace_update("restart_visible");
+            self.update_ready_traced = true;
+        }
         ui.add_space(6.);
         ui.label(
             egui::RichText::new(format!(
@@ -1542,6 +1552,34 @@ impl App {
             .color(self.palette().dim),
         );
     }
+    // Explicitly enabled diagnostics contain only public versions and UI state.
+    // Helpers inherit the opt-in so the release-to-release GUI test can observe
+    // the replacement process without altering its update path.
+    fn trace_update(&self, event: &str) {
+        if !self.update_trace_enabled {
+            return;
+        }
+        let path = self.profile_dir.join("native-updates/ui-events.jsonl");
+        if let Some(parent) = path.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                return;
+            }
+        }
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() >= 32768) {
+            return;
+        }
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            use std::io::Write;
+            let record = json!({"event":event,"pid":std::process::id(),
+                "version":env!("CARGO_PKG_VERSION"),"time":now(),
+                "offerVersion":self.update_offer.as_ref().map(|offer| &offer.version)});
+            let _ = writeln!(file, "{record}");
+        }
+    }
     fn check_updates(&mut self) {
         if self.update_busy {
             return;
@@ -1551,6 +1589,7 @@ impl App {
             self.update_progress = None;
             self.update_status = "Checking signed native releases…".into();
             self.last_update = Instant::now();
+            self.trace_update("check_started");
         } else {
             self.update_status = "Update service is unavailable; restart the HUD to retry".into();
         }
@@ -1567,7 +1606,9 @@ impl App {
                 .is_ok()
             {
                 self.update_busy = true;
+                self.update_ready_traced = false;
                 self.update_status = "Downloading signed update…".into();
+                self.trace_update("download_started");
             }
         }
     }
@@ -1583,6 +1624,7 @@ impl App {
                     self.update_busy = false;
                     self.update_status = format!("{} available", offer.version);
                     self.update_offer = Some(offer);
+                    self.trace_update("available");
                 }
                 updater::Event::State(updater::Status::Current) => {
                     self.update_busy = false;
@@ -1590,6 +1632,7 @@ impl App {
                     self.update_stage = None;
                     self.update_status =
                         format!("You're up to date · {}", env!("CARGO_PKG_VERSION"));
+                    self.trace_update("current");
                 }
                 updater::Event::Ready(stage) => {
                     self.update_busy = false;
@@ -1603,6 +1646,7 @@ impl App {
                     // A failed automatic download waits for a new explicit check.
                     self.update_offer = None;
                     self.update_status = format!("Update failed: {error}");
+                    self.trace_update("error");
                 }
             }
         }

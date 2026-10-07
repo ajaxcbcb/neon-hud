@@ -19,6 +19,26 @@ New-Item -ItemType Directory -Path $profilePath | Out-Null
 $receiptPath = Join-Path $outputPath 'receipt.json'
 $receipt = [ordered]@{ result = 'pending'; from = $FromTag; to = $ToTag; sourceCommit = $env:GITHUB_SHA }
 $cliIndex = 0
+$previousUpdateTrace = $env:NEON_HUD_UPDATE_TRACE
+
+function Wait-UpdateEvent([uint32]$PidValue, [string]$EventName, [string]$Version, [int]$Seconds = 65) {
+    $path = Join-Path $profilePath 'native-updates/ui-events.jsonl'
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    do {
+        $lines = @()
+        if (Test-Path -LiteralPath $path) {
+            try { $lines = [IO.File]::ReadAllLines($path) } catch [IO.IOException] { }
+        }
+        foreach ($line in $lines) {
+            try { $event = $line | ConvertFrom-Json } catch { continue }
+            if ($event.pid -ne $PidValue -or $event.version -ne $Version) { continue }
+            if ($event.event -eq 'error') { throw "GUI update failed in process $PidValue" }
+            if ($event.event -eq $EventName) { return $event }
+        }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    throw "GUI did not report $EventName in process $PidValue"
+}
 
 function Invoke-HudCli([string]$Exe, [string[]]$Arguments, [switch]$Reject) {
     $script:cliIndex++
@@ -182,25 +202,32 @@ try {
     $offer = Invoke-HudCli $installedExe @('--update-check')
     if ($offer.status -ne 'available' -or $offer.version -ne $after.metadata.version -or -not $offer.signed -or $offer.installedVersion -ne $before.metadata.version) { throw 'Live public channel did not offer the expected newer signed release' }
     $receipt.beforeCheck = $offer
+    $env:NEON_HUD_UPDATE_TRACE = '1'
     $oldGui = Start-Process -FilePath $installedExe -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $outputPath 'old-gui-stdout.log') -RedirectStandardError (Join-Path $outputPath 'old-gui-stderr.log')
     $oldSettings = Open-StartupSettings ([uint32]$oldGui.Id)
     [UpdateProofDesktop]::Capture($oldSettings, (Join-Path $outputPath 'old-update-settings.png'))
     [UpdateProofDesktop]::Click($oldSettings, 63, 373, $false)
-    Start-Sleep -Seconds 20
+    $checkStarted = Wait-UpdateEvent ([uint32]$oldGui.Id) 'check_started' $before.metadata.version 5
+    $guiOffer = Wait-UpdateEvent ([uint32]$oldGui.Id) 'available' $before.metadata.version
+    if ($guiOffer.offerVersion -ne $after.metadata.version) { throw 'GUI Check did not offer the expected signed version' }
     [UpdateProofDesktop]::Capture($oldSettings, (Join-Path $outputPath 'old-update-offer.png'))
     [UpdateProofDesktop]::Click($oldSettings, 151, 373, $false)
-    $downloadDeadline = (Get-Date).AddSeconds(65)
-    do {
-        Start-Sleep -Milliseconds 200
-        $stages = @(Get-ChildItem -LiteralPath (Join-Path $profilePath 'native-updates') -Filter 'ticket.json' -File -Recurse -ErrorAction SilentlyContinue)
-    } while ($stages.Count -ne 1 -and (Get-Date) -lt $downloadDeadline)
+    $downloadStarted = Wait-UpdateEvent ([uint32]$oldGui.Id) 'download_started' $before.metadata.version 5
+    # This event is emitted only after Ready is handled and the enabled Restart
+    # control is laid out without the downloading progress bar above it.
+    $ready = Wait-UpdateEvent ([uint32]$oldGui.Id) 'restart_visible' $before.metadata.version
+    $stages = @(Get-ChildItem -LiteralPath (Join-Path $profilePath 'native-updates') -Filter 'ticket.json' -File -Recurse)
     if ($stages.Count -ne 1) { throw 'Settings Download did not produce a verified update stage' }
-    Start-Sleep -Milliseconds 500
     [UpdateProofDesktop]::Capture($oldSettings, (Join-Path $outputPath 'old-update-ready.png'))
     [UpdateProofDesktop]::Click($oldSettings, 177, 373, $false)
+    $restartRequested = Wait-UpdateEvent ([uint32]$oldGui.Id) 'restart_requested' $before.metadata.version 5
     if (-not $oldGui.WaitForExit(15000)) { throw 'Settings Restart and update did not exit the old GUI normally' }
+    $oldGui.Refresh()
+    if ($oldGui.ExitCode -ne 0) { throw "Old GUI exited with failure code $($oldGui.ExitCode)" }
+    $receipt.guiUpdateEvents = @($checkStarted, $guiOffer, $downloadStarted, $ready, $restartRequested)
     $receipt.guiCheckDownloadRestartClicked = $true
     $receipt.oldGuiExitedNormally = $true
+    $receipt.oldGuiExitCode = $oldGui.ExitCode
     $deadline = (Get-Date).AddSeconds(65)
     do {
         Start-Sleep -Milliseconds 300
@@ -214,6 +241,7 @@ try {
     $guiProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'neon-hud-native.exe'" | Where-Object { $_.ExecutablePath -eq $installedExe })
     if ($guiProcesses.Count -ne 1) { throw 'Expected exactly one updated native GUI' }
     $guiPid = [uint32]$guiProcesses[0].ProcessId
+    $updatedGui = Get-Process -Id $guiPid
     $hud = Wait-Window $guiPid 'Neon HUD Native'
     Start-Sleep -Milliseconds 500
     [UpdateProofDesktop]::Capture($hud, (Join-Path $outputPath 'updated-hud.png'))
@@ -229,9 +257,11 @@ try {
     [UpdateProofDesktop]::Click($settings, 170, 179, $false)
     [UpdateProofDesktop]::Capture($settings, (Join-Path $outputPath 'update-settings-before-check.png'))
     [UpdateProofDesktop]::Click($settings, 63, 373, $false)
-    Start-Sleep -Seconds 15
+    $newCheckStarted = Wait-UpdateEvent $guiPid 'check_started' $after.metadata.version 5
+    $newCurrent = Wait-UpdateEvent $guiPid 'current' $after.metadata.version
     [UpdateProofDesktop]::Capture($settings, (Join-Path $outputPath 'update-settings-after-check.png'))
     $receipt.guiCheckButtonClicked = $true
+    $receipt.guiCurrentEvents = @($newCheckStarted, $newCurrent)
     [UpdateProofDesktop]::Click($settings, ($settings.Rect.Right-$settings.Rect.Left-27), 29, $false)
     Start-Sleep -Milliseconds 300
     $current = Invoke-HudCli $installedExe @('--update-check')
@@ -239,8 +269,10 @@ try {
     $receipt.afterCheck = $current
     $menu = Open-Controls $guiPid
     [UpdateProofDesktop]::Click($menu, 120, (58+36*5), $false)
-    $guiProcess = Get-Process -Id $guiPid -ErrorAction SilentlyContinue
-    if ($null -ne $guiProcess -and -not $guiProcess.WaitForExit(15000)) { throw 'Right-click Quit did not close the updated application normally' }
+    if (-not $updatedGui.WaitForExit(15000)) { throw 'Right-click Quit did not close the updated application normally' }
+    $updatedGui.Refresh()
+    if ($updatedGui.ExitCode -ne 0) { throw "Updated GUI exited with failure code $($updatedGui.ExitCode)" }
+    $receipt.updatedGuiExitCode = $updatedGui.ExitCode
     $saved = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
     foreach ($name in @('completed','theme','motion','size','launchAtLogin','codexEnabled')) { if ($saved.$name -ne $seed[$name]) { throw "Preference changed during update: $name" } }
     if (@($saved.storageDriveIds).Count -ne 1 -or $saved.storageDriveIds[0] -ne 'proof-drive' -or $saved.resources.samplingMs -ne 1000 -or -not $saved.resources.adaptive) { throw 'Drive/resource preferences changed during update' }
@@ -259,5 +291,6 @@ try {
     $receipt.result = 'failed'; $receipt.failure = $_.Exception.Message
     throw
 } finally {
+    $env:NEON_HUD_UPDATE_TRACE = $previousUpdateTrace
     $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $receiptPath -Encoding utf8NoBOM
 }

@@ -23,6 +23,9 @@ auto-launch = "0.6"
 open = "5"
 display-info = "=0.5.9"
 
+[patch.crates-io]
+winit = { path = "vendor/winit" }
+
 [profile.release]
 opt-level = "s"
 lto = "thin"
