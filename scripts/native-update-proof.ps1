@@ -1,6 +1,6 @@
 param(
-    [ValidatePattern('^v0\.2\.0-alpha\.[0-9]+$')][string]$FromTag = 'v0.2.0-alpha.3',
-    [ValidatePattern('^v0\.2\.0-alpha\.[0-9]+$')][string]$ToTag = 'v0.2.0-alpha.4',
+    [ValidatePattern('^v0\.2\.0-alpha\.[0-9]+$')][string]$FromTag = 'v0.2.0-alpha.4',
+    [ValidatePattern('^v0\.2\.0-alpha\.[0-9]+$')][string]$ToTag = 'v0.2.0-alpha.6',
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [Parameter(Mandatory = $true)][string]$MesaDirectory
 )
@@ -283,6 +283,9 @@ try {
     $updatedProcessHandle = [UpdateProofDesktop]::OpenOwnedProcess($guiPid, $installedExe)
     $hud = Wait-Window $guiPid 'Neon HUD Native'
     Start-Sleep -Milliseconds 500
+    $hud = Wait-Window $guiPid 'Neon HUD Native'
+    if ($hud.Rect.Right-$hud.Rect.Left -ne 160 -or $hud.Rect.Bottom-$hud.Rect.Top -ne 56) { throw 'Upgrade did not retain the compressed Pill presentation' }
+    $receipt.legacyPillPresentationRetained = $true
     [UpdateProofDesktop]::Capture($hud, (Join-Path $outputPath 'updated-hud.png'))
     [UpdateProofDesktop]::CaptureIcon($installedExe, (Join-Path $outputPath 'program-icon.png'))
     $menu = Open-Controls $guiPid

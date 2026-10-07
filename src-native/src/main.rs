@@ -977,7 +977,7 @@ impl App {
                     });
                 }
                 let open = ctx.input(|i| {
-                    (i.pointer.button_clicked(egui::PointerButton::Secondary)
+                    (i.pointer.button_pressed(egui::PointerButton::Secondary)
                         && i.pointer.interact_pos().is_some_and(|pos| r.contains(pos)))
                         || (i.viewport().focused.unwrap_or(false)
                             && i.modifiers.shift

@@ -65,6 +65,9 @@ public static class NativeHudCapture {
         System.Threading.Thread.Sleep(50);
         mouse_event(secondary ? 0x0010u : 0x0004u, 0, 0, 0, UIntPtr.Zero);
     }
+    public static void SecondaryButton(bool down) {
+        mouse_event(down ? 0x0008u : 0x0010u, 0, 0, 0, UIntPtr.Zero);
+    }
     public static void Escape() {
         keybd_event(0x1B, 0, 0, UIntPtr.Zero);
         keybd_event(0x1B, 0, 2, UIntPtr.Zero);
@@ -268,6 +271,28 @@ try {
         [NativeHudCapture]::Escape()
         $hudWindow = Wait-NookState 'collapsed' 240 40
         $nookChecks += Save-NookFrame $hudWindow 'escape'
+        # Assert that Controls opens before secondary release. Opening on press
+        # can prevent the hover morph; this does not claim a resize occurred.
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+40, $hudWindow.Rect.Top+25) | Out-Null
+        Start-Sleep -Milliseconds 50
+        [NativeHudCapture]::SecondaryButton($true)
+        try {
+            $controlsDeadline = (Get-Date).AddSeconds(2)
+            do {
+                $controlsWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD · Controls' } | Select-Object -First 1
+                if ($null -ne $controlsWindow) { break }
+                Start-Sleep -Milliseconds 80
+            } while ((Get-Date) -lt $controlsDeadline)
+            if ($null -eq $controlsWindow) { throw 'Nook Controls did not open before secondary release' }
+            Start-Sleep -Milliseconds 500
+            $nookChecks += Save-NookFrame $controlsWindow 'secondary-press-before-release'
+        } finally {
+            [NativeHudCapture]::SecondaryButton($false)
+        }
+        [NativeHudCapture]::Escape()
+        [NativeHudCapture]::SetCursorPos([NativeHudCapture]::GetSystemMetrics(76)+10, [NativeHudCapture]::GetSystemMetrics(77)+[NativeHudCapture]::GetSystemMetrics(79)-10) | Out-Null
+        [NativeHudCapture]::SetForegroundWindow($hudWindow.Handle) | Out-Null
+        $hudWindow = Wait-NookState 'collapsed' 240 40
         [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+20) | Out-Null
         [NativeHudCapture]::Click($false)
         $hudWindow = Wait-NookState 'expanded' 900 192

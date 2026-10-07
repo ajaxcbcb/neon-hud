@@ -1,5 +1,5 @@
 //! Local Nook utilities. The caller supplies epoch milliseconds; this module never runs a clock.
-use crate::nook::PresentationPreference;
+use crate::nook::{PresentationMode, PresentationPreference};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -131,7 +131,7 @@ pub struct ProductivityState {
     pub next_task_id: u64,
     pub timer: Timer,
     pub files: Vec<FileReference>,
-    #[serde(default)]
+    #[serde(default = "legacy_presentation")]
     pub presentation: PresentationPreference,
     #[serde(default)]
     pub utilities: crate::utilities::Preferences,
@@ -149,6 +149,13 @@ impl Default for ProductivityState {
             presentation: PresentationPreference::default(),
             utilities: crate::utilities::Preferences::default(),
         }
+    }
+}
+
+fn legacy_presentation() -> PresentationPreference {
+    PresentationPreference {
+        mode: PresentationMode::Pill,
+        ..Default::default()
     }
 }
 
@@ -307,6 +314,7 @@ pub struct LoadResult {
 #[derive(Clone, Debug)]
 pub struct Store {
     directory: PathBuf,
+    initial_mode: PresentationMode,
 }
 
 impl Store {
@@ -317,7 +325,17 @@ impl Store {
         let directory = directory
             .canonicalize()
             .map_err(|error| error.to_string())?;
-        Ok(Self { directory })
+        // Capture before the settings worker can write a fresh profile. Imported
+        // and older native profiles retain their pill until Nook is selected.
+        let initial_mode = if directory.join("settings.json").exists() {
+            PresentationMode::Pill
+        } else {
+            PresentationMode::Nook
+        };
+        Ok(Self {
+            directory,
+            initial_mode,
+        })
     }
     fn primary(&self) -> PathBuf {
         self.directory.join(FILE_NAME)
@@ -332,7 +350,13 @@ impl Store {
         let primary = self.primary();
         if !primary.exists() && !self.backup().exists() && !self.temporary().exists() {
             return Ok(LoadResult {
-                state: ProductivityState::default(),
+                state: ProductivityState {
+                    presentation: PresentationPreference {
+                        mode: self.initial_mode,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
                 recovered_from_backup: false,
                 recovered_from_temporary: false,
                 warning: None,
@@ -1063,7 +1087,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
-    fn old_version_one_state_defaults_to_nook_without_losing_data() {
+    fn old_version_one_state_retains_pill_without_losing_data() {
         let mut old = ProductivityState::default();
         old.set_note("existing note".into()).unwrap();
         let id = old.add_task("existing task".into()).unwrap();
@@ -1077,11 +1101,40 @@ mod tests {
         assert_eq!(migrated.note, "existing note");
         assert_eq!(migrated.tasks, old.tasks);
         assert_eq!(migrated.files, old.files);
-        assert_eq!(
-            migrated.presentation.mode,
-            crate::nook::PresentationMode::Nook
-        );
+        assert_eq!(migrated.presentation.mode, PresentationMode::Pill);
         assert!(!migrated.presentation.pinned);
+    }
+    #[test]
+    fn first_nook_upgrade_keeps_existing_profile_and_explicit_choice() {
+        let (dir, _) = test_store();
+        let profile = b"existing preferences retained byte for byte";
+        fs::write(dir.join("settings.json"), profile).unwrap();
+        let store = Store::new(&dir).unwrap();
+        let mut state = store.load().unwrap().state;
+        assert_eq!(state.presentation.mode, PresentationMode::Pill);
+        state.presentation.mode = PresentationMode::Nook;
+        state.set_note("keep this note".into()).unwrap();
+        state.timer.start(1_000, 90_000).unwrap();
+        store.save(&state).unwrap();
+        let restarted = Store::new(&dir).unwrap().load().unwrap().state;
+        assert_eq!(restarted.presentation.mode, PresentationMode::Nook);
+        assert_eq!(restarted.note, state.note);
+        assert_eq!(restarted.timer, state.timer);
+        assert_eq!(fs::read(dir.join("settings.json")).unwrap(), profile);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn fresh_profile_defaults_to_nook_despite_later_settings_write() {
+        let (dir, store) = test_store();
+        fs::write(dir.join("settings.json"), b"new settings worker write").unwrap();
+        let state = store.load().unwrap().state;
+        assert_eq!(state.presentation.mode, PresentationMode::Nook);
+        store.save(&state).unwrap();
+        assert_eq!(
+            Store::new(&dir).unwrap().load().unwrap().state.presentation,
+            state.presentation
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn failed_initial_load_stops_without_overwriting_corruption_or_repainting_forever() {

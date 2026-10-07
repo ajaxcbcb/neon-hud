@@ -28,7 +28,7 @@ on:
         type: boolean
         default: false
       proof:
-        description: Test the published alpha.4 to alpha.5 signed GUI update only
+        description: Test the published alpha.4 to alpha.6 signed GUI update only
         type: boolean
         default: false
 
@@ -45,7 +45,7 @@ jobs:
     uses: ./.github/workflows/native-update-proof.yml
     with:
       from: v0.2.0-alpha.4
-      to: v0.2.0-alpha.5
+      to: v0.2.0-alpha.6
   native-preview:
     if: github.event_name != 'workflow_dispatch' || !inputs.proof
     strategy:

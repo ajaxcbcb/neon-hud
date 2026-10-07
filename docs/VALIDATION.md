@@ -2,6 +2,12 @@
 
 Checked on 7 October 2026.
 
+## Native alpha.6 repair gates
+
+- [Alpha.5 publication](https://github.com/ajaxcbcb/neon-hud/actions/runs/37652273029), source `9772057e994bf9dd90ecb3078f660f486a34762f`, passed both platform checks, signing and independent signature verification. All eight downloaded public asset sizes/digests, archive architecture and license notices matched.
+- [Alpha.4 → alpha.5 hosted GUI update](https://github.com/ajaxcbcb/neon-hud/actions/runs/37653892333) passed signed release and tamper checks, physical Check/Download/Restart, old normal exit and exact published replacement startup. It failed to open replacement Controls; the captured replacement showed Nook instead of the seeded compressed pill. Full update acceptance failed, and this build was not installed on the target.
+- Alpha.6 repairs use secondary-press handling and retain legacy pill presentation. Regression coverage includes a menu opening while secondary is held, legacy/fresh/explicit presentation defaults and a 160 × 56 post-update pill. Review found no migration data-safety issue. Exact-source and public signed-update acceptance are pending; holding secondary does not prove that a hover resize occurred.
+
 ## Native Nook alpha.5 acceptance
 
 - The [Windows candidate run](https://github.com/ajaxcbcb/neon-hud/actions/runs/37647409733), source `c91e835d7bfbfadd90e6ff7e82cf0bba34e804bf`, passed native/core tests, release build and native dependency closure after cloud-generated formatting/dependency repairs. The committed-source gate failed because those repairs were not yet committed; Mac compilation also exposed an Objective-C BOOL callback type error. This is not exact-source acceptance.

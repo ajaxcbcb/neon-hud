@@ -591,7 +591,9 @@ impl App {
                     }
                 }
                 let right_click = ctx.input(|i| {
-                    (i.pointer.button_clicked(egui::PointerButton::Secondary)
+                    // A native hover resize can move local coordinates between press
+                    // and release. Open on press so that morphing cannot cancel it.
+                    (i.pointer.button_pressed(egui::PointerButton::Secondary)
                         && i.pointer.interact_pos().is_some_and(|p| rect.contains(p)))
                         || (focused && i.modifiers.shift && i.key_pressed(egui::Key::F10))
                 });
