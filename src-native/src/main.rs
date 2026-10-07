@@ -281,7 +281,9 @@ impl App {
                 .and_then(|v| serde_json::from_slice(&v).ok())
                 .unwrap_or_default(),
             profile_dir: dir,
-            update_status: update_error.as_ref().map(|error| format!("Previous update failed: {error}"))
+            update_status: update_error
+                .as_ref()
+                .map(|error| format!("Previous update failed: {error}"))
                 .unwrap_or_else(|| "Ready to check for updates".into()),
             update_offer: None,
             update_stage: None,
@@ -312,7 +314,13 @@ impl App {
             paused: false,
             settings: (smoke && !smoke_interaction) || update_error.is_some(),
             details: smoke && smoke_page == 0 && !smoke_interaction,
-            page: if update_error.is_some() { 2 } else if smoke { smoke_page.min(2) } else { 0 },
+            page: if update_error.is_some() {
+                2
+            } else if smoke {
+                smoke_page.min(2)
+            } else {
+                0
+            },
             preferences_tab: usize::from(update_error.is_some() || (smoke && smoke_page == 3)),
             drive_page: 0,
             selected: "cpu".into(),
