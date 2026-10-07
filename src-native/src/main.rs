@@ -439,7 +439,7 @@ impl App {
                             )));
                             self.position_hold = Instant::now() + Duration::from_millis(350);
                         }
-                        self.settings = !flag(&self.profile, "completed");
+                        self.settings |= !flag(&self.profile, "completed");
                     }
                     // Preview launch never enables connectors or startup automatically.
                 }

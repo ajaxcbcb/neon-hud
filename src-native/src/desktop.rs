@@ -46,7 +46,8 @@ use tray_icon::{
 
 pub fn profile_dir(smoke: bool) -> Result<PathBuf, String> {
     if smoke {
-        let profile = std::env::temp_dir().join(format!("neon-native-smoke-{}", std::process::id()));
+        let profile =
+            std::env::temp_dir().join(format!("neon-native-smoke-{}", std::process::id()));
         std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
         return Ok(profile);
     }

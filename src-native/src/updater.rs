@@ -598,26 +598,8 @@ fn restart_original_if_safe(path: &Path) -> Result<bool, String> {
     let own_profile = crate::desktop::profile_dir(false)?
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    if t.profile.canonicalize().ok().as_deref() != Some(own_profile.as_path()) {
-        return Ok(false);
-    }
-    if verify_ticket(path, &t).is_err() {
-        return Ok(false);
-    }
-    let helper = path
-        .parent()
-        .ok_or("Invalid update stage")?
-        .join(if cfg!(windows) {
-            "update-helper.exe"
-        } else {
-            "update-helper"
-        });
-    if std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .canonicalize()
-        .map_err(|e| e.to_string())?
-        != helper
-    {
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    if verify_recovery_identity(path, &t, &own_profile, &current_exe).is_err() {
         return Ok(false);
     }
     if relaunch_marker(path)?.exists() {
@@ -630,6 +612,83 @@ fn restart_original_if_safe(path: &Path) -> Result<bool, String> {
     drop(lease);
     spawn_previous(&t.target, path)?;
     Ok(true)
+}
+fn expected_recovery_target(target: &Path, platform: &str) -> bool {
+    let expected_exe = if platform == "windows-x86_64" {
+        "neon-hud-native.exe"
+    } else if matches!(platform, "macos-aarch64" | "macos-x86_64") {
+        "neon-hud-native"
+    } else {
+        return false;
+    };
+    if target.file_name().and_then(|x| x.to_str()) != Some(expected_exe) {
+        return false;
+    }
+    if platform == "windows-x86_64" {
+        return true;
+    }
+    let Some(macos) = target.parent() else {
+        return false;
+    };
+    let Some(contents) = macos.parent() else {
+        return false;
+    };
+    let Some(bundle) = contents.parent() else {
+        return false;
+    };
+    macos.file_name().and_then(|x| x.to_str()) == Some("MacOS")
+        && contents.file_name().and_then(|x| x.to_str()) == Some("Contents")
+        && bundle.extension().and_then(|x| x.to_str()) == Some("app")
+}
+fn verify_recovery_identity(
+    path: &Path,
+    t: &Ticket,
+    own_profile: &Path,
+    current_exe: &Path,
+) -> Result<(), String> {
+    let profile = t.profile.canonicalize().map_err(|e| e.to_string())?;
+    if profile != own_profile {
+        return Err("Recovery ticket belongs to another profile".into());
+    }
+    let base = stage_base(&profile)?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let dir = path
+        .parent()
+        .ok_or("Invalid recovery ticket path")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if dir.parent() != Some(base.as_path())
+        || path.canonicalize().map_err(|e| e.to_string())? != dir.join("ticket.json")
+        || t.archive != dir.join("archive.zip")
+        || t.manifest != dir.join("native-update.json")
+        || t.signature != dir.join("native-update.json.sig")
+    {
+        return Err("Recovery ticket outside owned stage".into());
+    }
+    let helper = dir.join(if cfg!(windows) {
+        "update-helper.exe"
+    } else {
+        "update-helper"
+    });
+    if current_exe.canonicalize().map_err(|e| e.to_string())? != helper {
+        return Err("Recovery helper is not the owned stage helper".into());
+    }
+    if t.platform != platform()?
+        || !expected_recovery_target(&t.target, &t.platform)
+        || t.target.canonicalize().map_err(|e| e.to_string())? != t.target
+        || t.old_sha256.len() != 64
+        || !t
+            .old_sha256
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err("Recovery target identity is invalid".into());
+    }
+    if file_sha256(&helper)? != t.old_sha256 || file_sha256(&t.target)? != t.old_sha256 {
+        return Err("Recovery binary differs from the original application".into());
+    }
+    Ok(())
 }
 fn read_ticket(path: &Path) -> Result<Ticket, String> {
     serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
@@ -1033,6 +1092,25 @@ fn extract(archive: &Path, dest: &Path, platform: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovery_requires_expected_install_shape() {
+        assert!(expected_recovery_target(
+            Path::new("C:/Apps/neon-hud-native.exe"),
+            "windows-x86_64"
+        ));
+        assert!(!expected_recovery_target(
+            Path::new("C:/Apps/other.exe"),
+            "windows-x86_64"
+        ));
+        assert!(expected_recovery_target(
+            Path::new("/Applications/Neon HUD Native.app/Contents/MacOS/neon-hud-native"),
+            "macos-aarch64"
+        ));
+        assert!(!expected_recovery_target(
+            Path::new("/Applications/neon-hud-native"),
+            "macos-aarch64"
+        ));
+    }
     #[test]
     fn rejects_downgrade_and_external_asset() {
         assert!(!newer("0.1.9").unwrap());

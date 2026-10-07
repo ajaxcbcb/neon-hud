@@ -257,6 +257,8 @@ try {
             $yKey = if ($edge.Contains('top')) { 'top' } elseif ($edge.Contains('bottom')) { 'bottom' } else { 'center' }
             if (-not [NativeHudCapture]::SetWindowPos($hudWindow.Handle, [IntPtr]::Zero, $xs[$xKey], $ys[$yKey], 0, 0, 0x15)) { throw 'Could not position CI HUD for right click' }
             [NativeHudCapture]::SetForegroundWindow($hudWindow.Handle) | Out-Null
+            # Allow Windows move/focus events to reach egui before delivering input.
+            Start-Sleep -Milliseconds 300
             # Exercise metric, grip and background areas, rather than a synthetic menu command.
             $hitX = if ($edge -eq 'top') { 10 } elseif ($edge -eq 'bottom') { 140 } else { 42 }
             $hitY = if ($edge -eq 'bottom') { 3 } else { 25 }
@@ -293,6 +295,7 @@ try {
             $hudWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
             if ($null -eq $hudWindow) { throw "HUD disappeared before $action" }
             [NativeHudCapture]::SetForegroundWindow($hudWindow.Handle) | Out-Null
+            Start-Sleep -Milliseconds 200
             [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+40, $hudWindow.Rect.Top+25) | Out-Null
             [NativeHudCapture]::Click($true)
             $actionDeadline = (Get-Date).AddSeconds(2)
