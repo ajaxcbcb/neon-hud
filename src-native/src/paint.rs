@@ -1,5 +1,23 @@
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
+pub fn configure_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "hud-bold".into(),
+        egui::FontData::from_static(include_bytes!("../assets/Ubuntu-Bold.ttf")).into(),
+    );
+    let mut fallback = fonts.families[&egui::FontFamily::Proportional].clone();
+    fallback.insert(0, "hud-bold".into());
+    fonts
+        .families
+        .insert(egui::FontFamily::Name("hud-bold".into()), fallback);
+    ctx.set_fonts(fonts);
+}
+
+pub fn bold(size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name("hud-bold".into()))
+}
+
 #[derive(Clone, Copy)]
 pub struct Palette {
     pub bg: Color32,
@@ -21,8 +39,8 @@ impl Palette {
                 Color32::from_rgb(183, 151, 255),
             ),
             _ => (
-                Color32::from_rgb(215, 255, 99),
-                Color32::from_rgb(255, 110, 166),
+                Color32::from_rgb(201, 255, 53),
+                Color32::from_rgb(247, 139, 255),
             ),
         };
         Self {
@@ -165,7 +183,7 @@ pub fn choice_card(
         rect.left_top() + Vec2::new(54., 18.),
         egui::Align2::LEFT_CENTER,
         title,
-        FontId::proportional(15.),
+        bold(15.),
         foreground,
     );
     painter.text(
@@ -176,12 +194,12 @@ pub fn choice_card(
         secondary,
     );
     if selected {
-        painter.text(
+        icon(
+            &painter,
             rect.right_center() - Vec2::new(18., 0.),
-            egui::Align2::CENTER_CENTER,
-            "✓",
-            FontId::proportional(16.),
+            "check",
             foreground,
+            14.,
         );
     }
     response
@@ -355,6 +373,15 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
         painter.line_segment([pt(a.0, a.1), pt(b.0, b.1)], stroke);
     };
     match key {
+        "check" => {
+            line((-5., 0.), (-1., 4.));
+            line((-1., 4.), (6., -5.));
+        }
+        "next" => {
+            line((-7., 0.), (7., 0.));
+            line((3., -4.), (7., 0.));
+            line((7., 0.), (3., 4.));
+        }
         "star" => {
             let mut points = Vec::with_capacity(11);
             for i in 0..10 {
@@ -376,11 +403,23 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
             painter.circle_filled(pt(6., -4.), 1.8 * s, color);
         }
         "sparkle" => {
-            line((0., -8.), (0., 8.));
-            line((-8., 0.), (8., 0.));
-            line((-4., -4.), (4., 4.));
-            line((-4., 4.), (4., -4.));
-            painter.circle_filled(c, 2. * s, color);
+            let points = [
+                pt(0., -8.),
+                pt(2., -2.),
+                pt(8., 0.),
+                pt(2., 2.),
+                pt(0., 8.),
+                pt(-2., 2.),
+                pt(-8., 0.),
+                pt(-2., -2.),
+            ];
+            for i in 0..points.len() {
+                painter.add(egui::Shape::convex_polygon(
+                    vec![c, points[i], points[(i + 1) % points.len()]],
+                    color,
+                    Stroke::NONE,
+                ));
+            }
         }
         "cpu" | "gpu" => {
             painter.rect_stroke(

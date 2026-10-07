@@ -24,6 +24,7 @@ using System.Text;
 
 public static class NativeHudCapture {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int Size; public RECT Monitor, Work; public int Flags; }
     public class WindowInfo { public IntPtr Handle; public string Title; public RECT Rect; }
     public delegate bool EnumWindowsCallback(IntPtr window, IntPtr param);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr param);
@@ -36,6 +37,8 @@ public static class NativeHudCapture {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
+    [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
 
     public static List<WindowInfo> VisibleWindows(uint launchedPid) {
         var windows = new List<WindowInfo>();
@@ -70,6 +73,11 @@ public static class NativeHudCapture {
         int screenWidth = GetSystemMetrics(78), screenHeight = GetSystemMetrics(79);
         if (rect.Left < screenX || rect.Top < screenY || rect.Right > screenX + screenWidth || rect.Bottom > screenY + screenHeight)
             throw new InvalidOperationException("Native window extends outside the CI desktop; capture would be clipped");
+        var monitor = new MONITORINFO { Size = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(MonitorFromWindow(window, 2), ref monitor))
+            throw new InvalidOperationException("Could not inspect native window work area");
+        if (rect.Left < monitor.Work.Left || rect.Top < monitor.Work.Top || rect.Right > monitor.Work.Right || rect.Bottom > monitor.Work.Bottom)
+            throw new InvalidOperationException("Native window extends outside the work area; taskbar could obscure capture");
         using (var bitmap = new Bitmap(width, height)) {
             using (var graphics = Graphics.FromImage(bitmap)) {
                 graphics.CopyFromScreen(rect.Left, rect.Top, 0, 0, bitmap.Size);

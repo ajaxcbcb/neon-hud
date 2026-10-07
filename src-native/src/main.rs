@@ -118,6 +118,7 @@ impl App {
     ) -> Self {
         let ctx = &cc.egui_ctx;
         ctx.set_embed_viewports(false);
+        paint::configure_fonts(ctx);
         Palette::new("circuit").apply(ctx);
         let tray = Tray::new(ctx.clone());
         let status = tray
@@ -723,7 +724,7 @@ impl App {
                 .with_resizable(false)
                 .with_decorations(false)
                 .with_transparent(true)
-                .with_position(if self.smoke { [250., 60.] } else { [120., 60.] }),
+                .with_position(if self.smoke { [250., 20.] } else { [120., 20.] }),
             |ctx, _| {
                 if ctx.input(|i| i.viewport().close_requested()) {
                     self.settings = false;
@@ -893,16 +894,23 @@ impl App {
                             .rect_filled(next.translate(Vec2::new(3., 4.)), 7, p.pop);
                         ui.painter().rect_filled(next, 7, p.accent);
                         let label = match self.page {
-                            0 => "Next: Connect sources  →",
-                            1 => "Next: Preferences  →",
-                            _ => "Ready: Show HUD  →",
+                            0 => "Next: Connect sources",
+                            1 => "Next: Preferences",
+                            _ => "Ready: Show HUD",
                         };
                         ui.painter().text(
-                            next.center(),
+                            next.center() - Vec2::new(8., 0.),
                             egui::Align2::CENTER_CENTER,
                             label,
                             FontId::proportional(12.),
                             p.bg,
+                        );
+                        paint::icon(
+                            ui.painter(),
+                            next.right_center() - Vec2::new(14., 0.),
+                            "next",
+                            p.bg,
+                            12.,
                         );
                         if ui
                             .interact(next, ui.id().with("setup-next"), Sense::click())
@@ -950,14 +958,14 @@ impl App {
             at(0., 24.),
             egui::Align2::LEFT_TOP,
             "Tiny HUD.",
-            FontId::proportional(48.),
+            paint::bold(48.),
             p.ink,
         );
         ui.painter().text(
             at(0., 70.),
             egui::Align2::LEFT_TOP,
             "Big energy",
-            FontId::proportional(48.),
+            paint::bold(48.),
             p.accent,
         );
         paint::icon(ui.painter(), at(271., 91.), "sparkle", p.pop, 27.);
