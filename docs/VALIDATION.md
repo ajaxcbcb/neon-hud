@@ -2,12 +2,13 @@
 
 Checked on 7 October 2026.
 
-## Native Nook candidate
+## Native Nook alpha.5 acceptance
 
 - The [Windows candidate run](https://github.com/ajaxcbcb/neon-hud/actions/runs/37647409733), source `c91e835d7bfbfadd90e6ff7e82cf0bba34e804bf`, passed native/core tests, release build and native dependency closure after cloud-generated formatting/dependency repairs. The committed-source gate failed because those repairs were not yet committed; Mac compilation also exposed an Objective-C BOOL callback type error. This is not exact-source acceptance.
 - Real Windows pointer input passed collapsed 240 × 40, hover peek 520 × 112, expanded/pinned 900 × 192, outside-pointer retention, Escape collapse and all 11 Nook/Tray/icon views. Pointer and keyboard actions saved the entered note, task and running timer. The isolated session exited normally with code 0. Settings, eight screen-edge hovers and right-click menu actions passed in the same run.
 - Native frames were inspected for the shallow simultaneous widgets, numeric rail, focused instruments/AI, notes, tasks, timer and file Tray. The [Nook capture](assets/native-nook.png) contains runner measurements and unavailable-source labels, with no invented media or AI readings. Exact transition timing and Mac/target-machine hardware behavior remain unverified.
-- Formatting/lock repair, Mac callback repair and a rapid camera-toggle retry fix are being checked in the next exact-source run. Public alpha.5 and installed update evidence will be recorded after acceptance.
+- [Exact-source acceptance](https://github.com/ajaxcbcb/neon-hud/actions/runs/37649950475), source `0f11ba78d656d7a188cb0c6864a370d4415e61dc`, passed locked Windows/Mac tests and release builds, formatting, unchanged-source/dependency checks and native packaging. The Objective-C BOOL callback and camera-toggle retry repairs are included.
+- The exact-source Windows receipts passed all 11 Nook views, collapsed/peek/expanded/pinned/Escape geometry, saved note/task/running-timer checks, eight inward hovers, right-click actions, hidden callbacks and normal Quit with exit code 0. The final expanded, peek and timer captures were inspected. Signed alpha.5 publication and alpha.4-to-alpha.5 GUI update are separate gates; the installed target remains unverified for this version.
 
 ## Native signed alpha.4 update
 

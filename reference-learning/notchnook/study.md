@@ -77,6 +77,7 @@ claim requires inspected native renders and representative reference states.
 
 ## Revision log
 
+- 2026-10-07: a second bounded playback inspection observed timer-wheel hover and the timer-start row in the official 33-second demo. Native video controls did not yield reliable muted seeking, so exact collapse/expand duration, easing and continuous playback coverage remain unknown. The owned hidden IAB tab was closed within its five-minute grant; no reference media were downloaded or bundled. Exact-source Windows/Mac CI and physical Nook controls now pass; expanded, peek and timer frames were inspected. Starting animation values remain explicitly unmeasured.
 - 2026-10-07: user requested ultra-copycat NotchNook design, transitions,
   animations and features, then explicitly retained the core HUD capabilities.
   Added an independent productivity store and observed five official clips at
