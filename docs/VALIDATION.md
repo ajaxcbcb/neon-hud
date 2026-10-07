@@ -7,7 +7,9 @@ Checked on 7 October 2026.
 - Local Svelte/TypeScript check: zero errors and warnings. Frontend tests: 51 passed, including adapter selection, stale/null capability boundaries, cached GPU pressure timing, recovery evidence, independent polling and finite display transitions with an injected 144 Hz clock.
 - Production frontend build passed; dependency audit reported zero vulnerabilities. Rust formatting passed.
 - The 144 Hz test is a deterministic frame-clock fixture, not a measurement of the installed app's frame rate.
-- Windows/Mac native compilation, native tests, packages and signature checks are pending cloud CI. Native GPU values and full-process performance remain unmeasured.
+- [Final native CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37567052327), source `1fa44bc8a1503485d51b2b656f81a1f4589006a1`, passed all 26 Windows and 23 Mac native tests, Windows x64 setup and universal Mac packaging, and the Windows visible-window launch check. This follows a repaired test-only missing thread import in the earlier failed run.
+- The [public v0.1.2 preview](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.2) contains five CI artifacts and SHA256SUMS.txt. All five artifact digests matched GitHub's uploaded asset digests; both updater payload signatures and trusted comments verified against the configured public key. The Windows setup SHA-256 is `ff4281fa25a6aeea56b066c86ee9613b5447e7c4378a5a579df5265941a0569f`.
+- `updates/latest.json` covers Windows x64 and both Intel/Apple Silicon Mac updater targets using the verified payloads. Installed updater execution, native GPU values and full-process performance remain unmeasured.
 - No new local visual/native installation batch ran while the shared machine's interactive lane was reserved. The existing 0.1.1 pill visual evidence remains below; the added GPU layout needs installed inspection.
 
 ## 0.1.1 refinement

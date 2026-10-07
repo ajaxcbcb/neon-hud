@@ -4,23 +4,24 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: v0.1.1 public. v0.1.2 GPU and fast-sampling implementation integrated, frontend checks underway, independent backend review active. Native compilation and packaging use cloud CI; local visual/native installation waits for shared host admission. Priority P1.
+Status: v0.1.2 public preview. Frontend checks, independent backend review, Windows/Mac native tests, signed packaging, Windows cloud launch and artifact verification passed. Local visual/native installation waits for shared host admission; installed 0.1.0 remains in place. Priority P1.
 
-Next: Complete frontend/audit/format checks and review, push the v0.1.2 source, verify cloud Windows/Mac builds and signed artifacts, then publish the preview and updater manifest. Install and measure actual GPU/frame rate only after shared host admission.
+Next: After shared host admission, reuse the isolated browser profile to inspect the GPU pill and settings, then install the verified Windows update. Check the installed UI, GPU readings and updater. Measure actual frame rate and full-process resource use only when that measurement lane is admitted. A real Claude Code session is still required for provider quota evidence.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
-| Bridge recovery repair | Backend worker | Focused review | Light local | Complete; regression passed on Windows and Mac |
-| Source integration | Coordinator | Startup repair | Repository write | Complete; dedicated monitor thread and launch regression |
-| Native tests and installers | GitHub CI | Source integration | Cloud | Complete; 18 tests each platform, both installers, Windows launch |
-| Windows installation | Coordinator | Verified Windows installer | Local installer | Complete; installer exit 0, visible Appearance window and inspected capture |
-| Public preview | Coordinator | Verified installers | Release write | Complete; public v0.1.0 release, both assets, matching hashes and validation evidence |
+| GPU provider and recovery | Backend worker / coordinator | Independent review | Source write | Complete; review findings resolved |
+| Frontend integration | Coordinator | GPU contract | Light local | Complete; 51 tests, zero check warnings/errors, build and audit |
+| Native tests and packages | GitHub CI | Source integration | Cloud | Complete; source 1fa44bc, 26 Windows / 23 Mac tests, signed payloads and Windows launch |
+| Public preview and manifest | Coordinator | Verified artifacts | Release write | Complete; v0.1.2, five matching CI asset hashes and both cryptographic signature checks |
+| GPU visual inspection | Coordinator | Host visual admission | Isolated browser | Queued; prepared fixture reuses retained profile |
+| Windows upgrade and measurements | Coordinator | Verified installer and host admission | Local installer / measurement | Queued; existing installed 0.1.0 retained |
 
-Current refinement: frontend/layout/config/docs integrated; async provider commands, exact bridge detection and native updater integrated. Independent review findings are addressed: prior refresh failure isolation, unsigned PR packaging, and the signed manifest publication gate. 36 frontend tests, zero Svelte errors/warnings, production build, Rust formatting and pill browser fixture passed. Windows/Mac signed packaging and Windows launch passed in cloud CI; artifact hashes and update signatures verified before publication. Installation is queued; no local native compilation is reserved. Release writes and installation run sequentially; runtime estimates are unknown.
+Current refinement: GPU telemetry, adapter selection, fast sampling and finite display-synced animation are integrated. Independent review's Windows counter-recovery finding is resolved. All 51 frontend tests, Svelte checks, production build, Rust formatting and dependency audit passed. Windows/Mac tests, signed packaging and Windows launch passed in cloud CI; artifact hashes and update signatures verified before publication. Installation is queued; no local native compilation is reserved. Release writes and installation run sequentially; runtime estimates are unknown.
 
 GPU/high-refresh increment: the coordinator owns sampling and UI integration; a backend worker owns the GPU provider module and dependency declarations. Acceptance covers multiple adapters, honest unavailable/stale fields, cached native discovery, GPU utilization/memory/temperature where supported, isolated hardware/animation/quota cadences, hidden-window backoff, pressure/reduced-motion handling and timer cleanup. Fast sampling is adjustable down to 250 ms for cheap counters; animation follows the display without a fixed 60 Hz cap. Native frame rate and telemetry accuracy require separate installed-platform evidence.
 
-Verified: 21 frontend unit tests, Svelte checks, production build, dependency audit, browser-fixture interaction/adaptive checks, 18 native tests each on Windows/Mac, both platform installers, Windows launch and installed Appearance capture. Live provider integration, native Mac installation/runtime, signing/notarization and full-process resource measurements remain unverified; see VALIDATION.md.
+Verified: 51 frontend unit tests, Svelte checks, production build, dependency audit, independent backend review, 26 Windows and 23 Mac native tests, both platform packages, Windows cloud launch, signed updater payloads and public asset hashes. Earlier browser-fixture and installed 0.1.0 appearance evidence is recorded in VALIDATION.md. Claude Code is authenticated and its status line plus seven bridge hooks are configured; live provider quota, installed 0.1.2 UI/GPU/frame rate, native Mac installation/runtime, OS signing/notarization and full-process resource measurements remain unverified.
 
 Must keep: honest missing/stale data; provider-reported five-hour windows only; separate ordinary ChatGPT and Codex quota; shared Claude limits; no credentials or transcripts; reversible Claude hook setup; optional login startup; reduced motion; numerical measurements alongside SVG gauges and bars.
 
