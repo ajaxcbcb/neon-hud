@@ -1514,7 +1514,11 @@ impl App {
             if ui
                 .add_enabled(
                     !self.update_busy && !self.quitting,
-                    egui::Button::new("Check now"),
+                    egui::Button::new(if self.update_busy {
+                        "Working…"
+                    } else {
+                        "Check now"
+                    }),
                 )
                 .clicked()
             {
@@ -1536,6 +1540,9 @@ impl App {
                 if ui.button("Download update").clicked() {
                     self.download_update();
                 }
+            }
+            if self.update_busy {
+                ui.spinner();
             }
         });
         if restart_visible && !self.update_ready_traced {
@@ -2096,6 +2103,11 @@ impl App {
                             }
                         }
                     });
+                // Hiding the root can suspend its redraws. Dismiss this native
+                // popup in the action frame instead of waiting for another one.
+                if self.controls.is_none() {
+                    ctx.send_viewport_cmd(ViewportCommand::Visible(false));
+                }
             },
         );
     }
