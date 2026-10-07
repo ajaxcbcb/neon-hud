@@ -2,6 +2,16 @@ use auto_launch::AutoLaunch;
 use eframe::egui;
 use std::path::PathBuf;
 
+pub fn app_icon() -> std::sync::Arc<egui::IconData> {
+    static ICON: std::sync::OnceLock<std::sync::Arc<egui::IconData>> = std::sync::OnceLock::new();
+    ICON.get_or_init(|| {
+        eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/128x128.png"))
+            .expect("Bundled Neon HUD icon must be a valid PNG")
+            .into()
+    })
+    .clone()
+}
+
 pub fn coordinate_scale(native_pixels_per_point: f32) -> f64 {
     if cfg!(target_os = "macos") {
         1.
@@ -99,23 +109,10 @@ impl Tray {
         let quit = MenuItem::new("Quit Neon HUD Native", true, None);
         menu.append_items(&[&show, &settings, &compress, &quit])
             .map_err(|e| e.to_string())?;
-        let mut rgba = vec![0; 32 * 32 * 4];
-        for y in 0..32 {
-            for x in 0..32 {
-                let dx = x as i32 - 16;
-                let dy = y as i32 - 16;
-                if dx * dx + dy * dy < 196 {
-                    let i = (y * 32 + x) * 4;
-                    let color = if (x + y) % 9 < 3 {
-                        [217, 255, 100, 255]
-                    } else {
-                        [30, 36, 45, 255]
-                    };
-                    rgba[i..i + 4].copy_from_slice(&color);
-                }
-            }
-        }
-        let icon = Icon::from_rgba(rgba, 32, 32).map_err(|e| e.to_string())?;
+        let image = eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/32x32.png"))
+        .map_err(|e| e.to_string())?;
+        let icon =
+            Icon::from_rgba(image.rgba, image.width, image.height).map_err(|e| e.to_string())?;
         let _icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_icon(icon)
@@ -167,3 +164,22 @@ impl Tray {
 }
 static TRAY_EVENTS: std::sync::OnceLock<std::sync::Mutex<Vec<tray_icon::menu::MenuId>>> =
     std::sync::OnceLock::new();
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bundled_icons_decode_and_share_the_application_mark() {
+        let app = super::app_icon();
+        assert_eq!((app.width, app.height), (128, 128));
+        assert!(std::sync::Arc::ptr_eq(&app, &super::app_icon()));
+        let tray = eframe::icon_data::from_png_bytes(include_bytes!("../../src-tauri/icons/32x32.png"))
+        .unwrap();
+        assert_eq!((tray.width, tray.height), (32, 32));
+        for icon in [&*app, &tray] {
+            assert!(icon
+                .rgba
+                .chunks_exact(4)
+                .any(|p| p[1] > 180 && p[2] > 180 && p[3] == 255));
+        }
+    }
+}

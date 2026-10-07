@@ -6,7 +6,9 @@ Objective: Deliver a small native Windows/Mac HUD, with fixed settings pages, nu
 
 Status: The separate unsigned native v0.2.0-alpha.2 is published, installed and running on the target Windows machine, with verified Desktop and Start menu shortcuts. The old preview exited normally. The 280 × 56 pill and its 248 × 110 hover panel were inspected; at the user's current right-side position, the panel opened to the left and stayed within the work area. The pill was not moved. Original v0.1.4 profiles, native preferences and Claude configuration remain unchanged. Exact-source Windows/Mac tests, locked builds, Windows rendered-page inspection and eight edge/corner hover checks passed; public artifact digests are verified. Target-machine Settings access from the alpha.1 pill was inconclusive.
 
-Next: Pill Settings/context-menu access remains open. Tray/drag/startup checks need their own runtime reservation. Complete in-process connectors and signed native updates before migration. Keep the stable updater manifest on 0.1.3 until replacement gates pass.
+Next: Implement the human-requested app icon and right-click repair in alpha.3; accept real Windows right-click/Settings/compression/dismissal checks and both locked platform builds, then publish and perform an admitted versioned installation preserving preferences. Complete in-process connectors and signed native updates before migration. Keep the stable updater manifest on 0.1.3 until replacement gates pass.
+
+Current design direction: reuse the existing Neon N program mark, dark purple ground, lime/pink accents, Ubuntu display and monospace labels. Put quick controls in a separate 240 × 270 native popup, with fixed readable rows, inward screen placement and no pill resize. Respect current themes and reduced-motion settings. Preserve the user's existing small pill and custom Settings frame.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|

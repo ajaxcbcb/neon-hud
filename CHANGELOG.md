@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0-alpha.3] - 2026-10-07
+
+- Right-click any metric, the drag grip or pill background to open a separate native controls popup. The complete menu opens inward at screen edges, supports Settings, compression, pause/resume, hide, reset and Quit, and dismisses with Escape or a focus change. Shift+F10 also opens it.
+- Embedded the Neon N icon in the Windows executable and native windows; the tray now uses the same mark. macOS retains its bundled app icon.
+- Controls use two columns when a small monitor limits the popup height, keeping every action reachable without scrolling.
+- Added real Windows mouse-input checks at all eight edges/corners, all six menu actions and Escape dismissal, plus executable/window icon checks.
+
 ## [0.2.0-alpha.2] - 2026-10-07
 
 - Native hover readings open inward at all four screen edges and corners and stay within the HUD monitor. Placement follows dragging and compression, including negative monitor origins and different display scales.

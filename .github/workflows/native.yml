@@ -100,6 +100,8 @@ jobs:
             ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory $output -SettingsPage $page
           }
           ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/hover" -HoverEdges
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/controls" -ContextMenu
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/controls-quit" -ContextMenu -QuitMenu
       - name: Package Windows portable preview
         if: runner.os == 'Windows'
         shell: pwsh

@@ -17,6 +17,47 @@ pub struct HoverPlacement {
     pub size: [f64; 2],
 }
 
+pub struct ControlsLayout {
+    pub compact: bool,
+    pub header_height: f32,
+    pub buttons: [[f32; 4]; 6],
+}
+
+/// Keep every action reachable when the monitor limits the popup's size.
+pub fn controls_layout(size: [f32; 2]) -> Option<ControlsLayout> {
+    if size.iter().any(|v| !v.is_finite() || *v <= 0.) {
+        return None;
+    }
+    let [width, height] = size;
+    let compact = width < 220. || height < 240.;
+    let columns = if compact { 2 } else { 1 };
+    let rows = 6 / columns;
+    let padding = if compact { 4. } else { 12_f32 }
+        .min(width / 20.)
+        .min(height / 20.);
+    let gap = if compact { 2. } else { 4_f32 }
+        .min(width / 40.)
+        .min(height / 40.);
+    let header_height = if compact { 24. } else { 42_f32 }.min(height * 0.3);
+    let button_width = (width - 2. * padding - (columns - 1) as f32 * gap) / columns as f32;
+    let button_height = ((height - header_height - padding - (rows - 1) as f32 * gap)
+        / rows as f32)
+        .min(32.);
+    let buttons = std::array::from_fn(|index| {
+        [
+            padding + (index % columns) as f32 * (button_width + gap),
+            header_height + (index / columns) as f32 * (button_height + gap),
+            button_width,
+            button_height,
+        ]
+    });
+    Some(ControlsLayout {
+        compact,
+        header_height,
+        buttons,
+    })
+}
+
 /// All coordinates use the same desktop units (physical pixels on Windows).
 pub fn hover_placement(
     hud: [f64; 4],
@@ -411,6 +452,28 @@ mod tests {
         assert_eq!(p.position, [8., 8.]);
         assert!(hover_placement([0., 0., 160., 56.], [248., 110.], 8., &[]).is_none());
         assert!(hover_placement([f64::NAN, 0., 160., 56.], [248., 110.], 8., &[screen]).is_none());
+    }
+    #[test]
+    fn controls_keep_all_actions_inside_small_and_scaled_viewports() {
+        for size in [[240., 270.], [184., 84.], [284., 184.], [120., 64.]] {
+            let layout = controls_layout(size).unwrap();
+            for (index, &[x, y, width, height]) in layout.buttons.iter().enumerate() {
+                assert!(x >= 0. && y >= layout.header_height && width > 0. && height > 0.);
+                assert!(x + width <= size[0] && y + height <= size[1]);
+                for &[other_x, other_y, other_width, other_height] in &layout.buttons[..index] {
+                    assert!(
+                        x + width <= other_x
+                            || other_x + other_width <= x
+                            || y + height <= other_y
+                            || other_y + other_height <= y
+                    );
+                }
+            }
+        }
+        assert!(!controls_layout([240., 270.]).unwrap().compact);
+        assert!(controls_layout([184., 84.]).unwrap().compact);
+        assert!(controls_layout([f32::NAN, 84.]).is_none());
+        assert!(controls_layout([240., 0.]).is_none());
     }
     #[test]
     fn placement_tracks_negative_monitor_origins_and_dpi() {

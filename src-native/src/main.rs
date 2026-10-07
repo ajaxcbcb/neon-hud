@@ -30,7 +30,10 @@ fn main() -> eframe::Result<()> {
     }
     let args: Vec<String> = std::env::args().collect();
     let smoke = args.iter().any(|a| a == "--smoke");
-    let smoke_hover = smoke && args.iter().any(|a| a == "--smoke-hover");
+    let smoke_interaction = smoke
+        && args
+            .iter()
+            .any(|a| a == "--smoke-hover" || a == "--smoke-menu");
     let smoke_page = args
         .iter()
         .find_map(|a| {
@@ -50,6 +53,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_title("Neon HUD Native")
+            .with_icon(desktop::app_icon())
             .with_inner_size([280., 56.])
             .with_resizable(false)
             .with_decorations(false)
@@ -70,7 +74,7 @@ fn main() -> eframe::Result<()> {
                 smoke,
                 minimized,
                 smoke_page,
-                smoke_hover,
+                smoke_interaction,
             )))
         }),
     )
@@ -105,10 +109,12 @@ struct App {
     drive_page: usize,
     selected: String,
     hover: Option<(String, Rect)>,
+    controls: Option<Rect>,
+    controls_focused: bool,
     drain: Drain,
     history: VecDeque<(f64, Option<f64>)>,
     smoke: bool,
-    smoke_hover: bool,
+    smoke_interaction: bool,
     started: Instant,
     quitting: bool,
     stopping: bool,
@@ -126,7 +132,7 @@ impl App {
         smoke: bool,
         minimized: bool,
         smoke_page: usize,
-        smoke_hover: bool,
+        smoke_interaction: bool,
     ) -> Self {
         let ctx = &cc.egui_ctx;
         ctx.set_embed_viewports(false);
@@ -168,17 +174,19 @@ impl App {
             tray,
             hidden,
             paused: false,
-            settings: smoke && !smoke_hover,
-            details: smoke && smoke_page == 0 && !smoke_hover,
+            settings: smoke && !smoke_interaction,
+            details: smoke && smoke_page == 0 && !smoke_interaction,
             page: if smoke { smoke_page.min(2) } else { 0 },
             preferences_tab: usize::from(smoke && smoke_page == 3),
             drive_page: 0,
             selected: "cpu".into(),
             hover: None,
+            controls: None,
+            controls_focused: false,
             drain: Drain::default(),
             history: VecDeque::new(),
             smoke,
-            smoke_hover,
+            smoke_interaction,
             started: Instant::now(),
             quitting: false,
             stopping: false,
@@ -243,6 +251,7 @@ impl App {
         if self.tray.is_some() {
             self.hidden = true;
             self.hover = None;
+            self.controls = None;
             ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Visible(false));
         } else {
             self.status = "Tray unavailable; HUD remains visible".into();
@@ -628,6 +637,7 @@ impl App {
                         p.ink,
                     );
                     if response.clicked() {
+                        self.controls = None;
                         self.selected = key.to_string();
                         self.details = true;
                         self.hover = None;
@@ -639,47 +649,20 @@ impl App {
                         ctx.request_repaint_after(Duration::from_millis(32));
                     }
                 }
-                let context = ui.interact(r, ui.id().with("quick"), Sense::hover());
-                context.context_menu(|ui| {
-                    if ui.button("Settings…").clicked() {
-                        self.settings = true;
-                        ui.close();
-                    }
-                    if ui
-                        .button(if compact {
-                            "Expand pill"
-                        } else {
-                            "Compress pill"
-                        })
-                        .clicked()
-                    {
-                        self.compress(ctx);
-                        ui.close();
-                    }
-                    if ui
-                        .button(if self.paused {
-                            "Resume monitoring"
-                        } else {
-                            "Pause monitoring"
-                        })
-                        .clicked()
-                    {
-                        self.paused = !self.paused;
-                        ui.close();
-                    }
-                    if ui.button("Hide to tray").clicked() {
-                        self.hide(ctx);
-                        ui.close();
-                    }
-                    if ui.button("Reset position").clicked() {
-                        ctx.send_viewport_cmd(ViewportCommand::OuterPosition(Pos2::new(60., 60.)));
-                        ui.close();
-                    }
-                    if ui.button("Quit").clicked() {
-                        self.quitting = true;
-                        ui.close();
-                    }
+                // Read secondary input for the whole pill, including metric and grip widgets.
+                // An egui context_menu would be clipped by this 56-point native viewport.
+                let open = ctx.input(|i| {
+                    (i.pointer.button_clicked(egui::PointerButton::Secondary)
+                        && i.pointer.interact_pos().is_some_and(|pos| r.contains(pos)))
+                        || (i.viewport().focused.unwrap_or(false)
+                            && i.modifiers.shift
+                            && i.key_pressed(egui::Key::F10))
                 });
+                if open {
+                    self.controls = ctx.input(|i| i.viewport().outer_rect);
+                    self.controls_focused = false;
+                    self.hover = None;
+                }
             });
         if ctx.input(|i| i.viewport().focused.unwrap_or(false)) {
             let delta = ctx.input(|i| {
@@ -727,6 +710,7 @@ impl App {
             ViewportId::from_hash_of("settings"),
             ViewportBuilder::default()
                 .with_title("Neon HUD · Settings")
+                .with_icon(desktop::app_icon())
                 .with_inner_size([740., 680.])
                 .with_resizable(false)
                 .with_decorations(false)
@@ -1320,6 +1304,7 @@ impl App {
             ViewportId::from_hash_of("details"),
             ViewportBuilder::default()
                 .with_title("Neon HUD · Instruments")
+                .with_icon(desktop::app_icon())
                 .with_inner_size([460., 460.])
                 .with_resizable(false)
                 .with_decorations(false)
@@ -1571,11 +1556,171 @@ impl App {
             },
         );
     }
+    fn controls_window(&mut self, ctx: &egui::Context) {
+        let Some(hud) = self.controls else {
+            return;
+        };
+        let scale = desktop::coordinate_scale(ctx.pixels_per_point());
+        let Some(placement) = hover_placement(
+            [
+                hud.min.x as f64 * scale,
+                hud.min.y as f64 * scale,
+                hud.width() as f64 * scale,
+                hud.height() as f64 * scale,
+            ],
+            [240. * scale, 270. * scale],
+            8. * scale,
+            &self.screens,
+        ) else {
+            self.controls = None;
+            return;
+        };
+        let p = self.palette();
+        ctx.show_viewport_immediate(
+            ViewportId::from_hash_of("controls"),
+            ViewportBuilder::default()
+                .with_title("Neon HUD · Controls")
+                .with_icon(desktop::app_icon())
+                .with_inner_size([
+                    (placement.size[0] / scale) as f32,
+                    (placement.size[1] / scale) as f32,
+                ])
+                .with_position([
+                    (placement.position[0] / scale) as f32,
+                    (placement.position[1] / scale) as f32,
+                ])
+                .with_resizable(false)
+                .with_decorations(false)
+                .with_transparent(true)
+                .with_taskbar(false)
+                .with_active(true)
+                .with_always_on_top(),
+            |ctx, _| {
+                let focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
+                if ctx.input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape))
+                    || (self.controls_focused && !focused)
+                {
+                    self.controls = None;
+                }
+                self.controls_focused |= focused;
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        let Some(layout) = controls_layout(ui.max_rect().size().into()) else {
+                            return;
+                        };
+                        let r = ui.max_rect().shrink(1.);
+                        ui.painter().rect_filled(r, 14, p.bg);
+                        ui.painter().rect_stroke(
+                            r,
+                            14,
+                            egui::Stroke::new(1., p.accent.gamma_multiply(0.55)),
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.painter().text(
+                            Pos2::new(
+                                if layout.compact { 8. } else { 14. },
+                                layout.header_height / 2.,
+                            ),
+                            egui::Align2::LEFT_CENTER,
+                            if layout.compact {
+                                "CONTROLS"
+                            } else {
+                                "QUICK CONTROLS"
+                            },
+                            FontId::monospace(11.),
+                            p.accent,
+                        );
+                        if ui
+                            .put(
+                                Rect::from_min_size(
+                                    Pos2::new(
+                                        ui.max_rect().width() - 36.,
+                                        if layout.compact { 0. } else { 9. },
+                                    ),
+                                    Vec2::new(26., layout.header_height.min(26.)),
+                                ),
+                                egui::Button::new("×").frame(false),
+                            )
+                            .clicked()
+                        {
+                            self.controls = None;
+                        }
+                        let compact = text(&self.profile, "size") == "compressed";
+                        let full_labels = [
+                            "Settings…",
+                            if compact {
+                                "Expand pill"
+                            } else {
+                                "Compress pill"
+                            },
+                            if self.paused {
+                                "Resume monitoring"
+                            } else {
+                                "Pause monitoring"
+                            },
+                            "Hide to tray",
+                            "Reset position",
+                            "Quit Neon HUD",
+                        ];
+                        let short_labels = [
+                            "Settings",
+                            if compact { "Expand" } else { "Compress" },
+                            if self.paused { "Resume" } else { "Pause" },
+                            "Hide",
+                            "Reset",
+                            "Quit",
+                        ];
+                        let labels = if layout.compact {
+                            short_labels
+                        } else {
+                            full_labels
+                        };
+                        if layout.compact {
+                            ui.spacing_mut().button_padding = Vec2::splat(1.);
+                        }
+                        for (index, label) in labels.iter().enumerate() {
+                            let [x, y, width, height] = layout.buttons[index];
+                            let rect =
+                                Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, height));
+                            let font_size = if layout.compact { height.min(11.) } else { 14. };
+                            let clicked = ui
+                                .put(
+                                    rect,
+                                    egui::Button::new(egui::RichText::new(*label).size(font_size)),
+                                )
+                                .clicked();
+                            if clicked {
+                                self.controls = None;
+                                match index {
+                                    0 => self.settings = true,
+                                    1 => self.compress(ctx),
+                                    2 => self.paused = !self.paused,
+                                    3 => self.hide(ctx),
+                                    4 => ctx.send_viewport_cmd_to(
+                                        ViewportId::ROOT,
+                                        ViewportCommand::OuterPosition(Pos2::new(60., 60.)),
+                                    ),
+                                    5 => self.quitting = true,
+                                    _ => unreachable!(),
+                                }
+                                if self.smoke {
+                                    eprintln!(
+                                        "NEON_CONTROL index={index} paused={} hidden={}",
+                                        self.paused, self.hidden
+                                    );
+                                }
+                            }
+                        }
+                    });
+            },
+        );
+    }
     fn hover_window(&mut self, ctx: &egui::Context) {
         let Some((key, hud)) = self.hover.clone() else {
             return;
         };
-        if self.details || self.settings {
+        if self.details || self.settings || self.controls.is_some() {
             return;
         }
         let scale = desktop::coordinate_scale(ctx.pixels_per_point());
@@ -1598,6 +1743,7 @@ impl App {
             ViewportId::from_hash_of("hover"),
             ViewportBuilder::default()
                 .with_title("Neon HUD reading")
+                .with_icon(desktop::app_icon())
                 .with_inner_size([
                     (placement.size[0] / scale) as f32,
                     (placement.size[1] / scale) as f32,
@@ -1651,6 +1797,7 @@ impl eframe::App for App {
                     TrayAction::Show => self.show(ctx),
                     TrayAction::Settings => {
                         self.show(ctx);
+                        self.controls = None;
                         self.settings = true;
                     }
                     TrayAction::Compress => self.compress(ctx),
@@ -1668,11 +1815,12 @@ impl eframe::App for App {
         }
         self.poll();
         self.hud(ctx);
+        self.controls_window(ctx);
         self.settings_window(ctx);
         self.detail_window(ctx);
         self.hover_window(ctx);
         if self.smoke
-            && self.started.elapsed() > Duration::from_secs(if self.smoke_hover { 30 } else { 12 })
+            && self.started.elapsed() > Duration::from_secs(if self.smoke_interaction { 30 } else { 12 })
         {
             self.quitting = true;
         }
