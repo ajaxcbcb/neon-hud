@@ -8,7 +8,7 @@ The **native Nook preview** is a compact Rust desktop HUD for Windows x64 and Ap
 
 Hosted Windows screenshot with sample readings. Existing profiles retain Pill until **Preferences → Instruments → HUD layout → Nook** is selected; explicit choices persist. Nook peeks on hover, expands on click, pins open and collapses with Escape. Right-click or Shift+F10 opens Controls.
 
-**Windows target status:** Defender quarantined the installed alpha.6 executable. Target launch and Nook replacement are blocked. A separate self-signed development package is [being verified in cloud CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37682274154); it does not establish public publisher trust or Defender clearance and does not change public release assets or the updater feed. See [validation evidence](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/docs/VALIDATION.md).
+**Windows target status:** Defender quarantined the installed alpha.6 executable. Target launch and Nook replacement are blocked. A separate self-signed development package is [being verified in cloud CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37684027154); it does not establish public publisher trust or Defender clearance and does not change public release assets or the updater feed. See [validation evidence](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/docs/VALIDATION.md).
 
 The native preview is independent of NotchNook; exact reference animation timing is unmeasured. Apache 2.0/MIT and third-party notices are bundled.
 
