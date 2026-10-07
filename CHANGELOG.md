@@ -1,6 +1,21 @@
 # Changelog
 
+Current native preview: [0.2.0-alpha.6](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6). Legacy WebView release: 0.1.4. These use separate packages and update channels.
+
+## Unreleased
+
+- Separate Windows development-signing workflow: fresh locked native build, non-exportable ephemeral certificate, SHA-256 Authenticode/RFC3161 timestamp verification and labeled package with public certificate and receipt. Verification trust is confined to the disposable CI account and removed afterward. This is not publicly trusted publisher signing or Defender clearance; public update assets remain unchanged.
+- Document the target alpha.6 Defender quarantine and pending runtime/Nook acceptance. Explicit Nook selection is required when replacing a retained Pill profile.
+
 ## [0.2.0-alpha.6] - 2026-10-07
+
+### Highlights
+
+- Native Nook capsule and utility widgets retain the core system/AI instruments.
+- Persistent connector intent, retained profiles and responsive right-click controls address restart and hover-transition issues.
+- Cryptographically signed Windows/Mac update packages and the public alpha.4-to-alpha.6 GUI upgrade passed. See [release notes](docs/releases/v0.2.0-alpha.6.md) and [validation](docs/VALIDATION.md) for runtime evidence and limits. OS code signing is separate.
+
+### Changes
 
 - Controls open on secondary press so a hover transition cannot cancel a release-based right-click. A physical held-button regression checks opening before release.
 - Existing and imported profiles retain their pill presentation on first Nook upgrade; fresh profiles start in Nook, and explicit choices survive restart. Existing utility data and settings are preserved.

@@ -31,23 +31,27 @@ on:
         description: Test the published alpha.4 to alpha.6 signed GUI update only
         type: boolean
         default: false
+      development_signing:
+        description: Build a separate Windows self-signed development artifact (not publicly trusted)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: native-${{ github.head_ref || github.ref_name }}-${{ inputs.proof && 'proof' || inputs.publish && 'publish' || 'checks' }}
+  group: native-${{ github.head_ref || github.ref_name }}-${{ inputs.development_signing && 'development-signing' || inputs.proof && 'proof' || inputs.publish && 'publish' || 'checks' }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   installed-update:
-    if: github.event_name == 'workflow_dispatch' && inputs.proof
+    if: github.event_name == 'workflow_dispatch' && inputs.proof && !inputs.development_signing
     uses: ./.github/workflows/native-update-proof.yml
     with:
       from: v0.2.0-alpha.4
       to: v0.2.0-alpha.6
   native-preview:
-    if: github.event_name != 'workflow_dispatch' || !inputs.proof
+    if: github.event_name != 'workflow_dispatch' || (!inputs.proof && !inputs.development_signing)
     strategy:
       fail-fast: false
       matrix:
@@ -188,8 +192,81 @@ jobs:
           echo 'Formatting or dependency lockfile needs repair; see the runner-specific repair patch artifact.' >&2
           exit 1
 
+  development-signing:
+    if: github.event_name == 'workflow_dispatch' && inputs.development_signing
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject conflicting publication modes
+        shell: pwsh
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          PROOF: ${{ inputs.proof }}
+        run: |
+          if ($env:PUBLISH -eq 'true' -or $env:PROOF -eq 'true') {
+            throw 'Development signing must run separately from publication and update proof.'
+          }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-native -> target
+      - name: Verify and build the committed native source
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path src-native/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { throw 'Formatting failed.' }
+          cargo metadata --manifest-path src-native/Cargo.toml --format-version 1 --locked > "$env:RUNNER_TEMP/native-metadata.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependencies failed.' }
+          cargo test --manifest-path src-native/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed.' }
+          cargo clean --manifest-path src-native/Cargo.toml --release -p neon-hud-native
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh native build preparation failed.' }
+          cargo build --manifest-path src-native/Cargo.toml --locked --release
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
+          git diff --exit-code -- src-native src-tauri
+          if ($LASTEXITCODE -ne 0) { throw 'Build altered committed source.' }
+      - name: Sign and verify the development package
+        shell: pwsh
+        run: |
+          ./scripts/sign-native-development.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-development-signing" -SourceCommit '${{ github.sha }}'
+      - name: Provide software OpenGL for isolated Nook acceptance
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa3d-23.3.5-release-msvc.7z'
+          $mesa = Join-Path $env:RUNNER_TEMP 'native-ci-mesa'
+          Invoke-WebRequest -Uri 'https://github.com/pal1000/mesa-dist-win/releases/download/23.3.5/mesa3d-23.3.5-release-msvc.7z' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'CE42BEE2034F3DBD272F1D658040DFA678C0D8E653F260BE8808F4E80F34C06A') { throw 'CI Mesa archive checksum mismatch' }
+          & 'C:\Program Files\7-Zip\7z.exe' x $archive "-o$mesa" 'x64/opengl32.dll' 'x64/libglapi.dll' 'x64/libgallium_wgl.dll'
+          if ($LASTEXITCODE -ne 0) { throw 'CI Mesa extraction failed' }
+          Copy-Item -LiteralPath (Join-Path $mesa 'x64/opengl32.dll'), (Join-Path $mesa 'x64/libglapi.dll'), (Join-Path $mesa 'x64/libgallium_wgl.dll') -Destination 'src-native/target/release'
+          'GALLIUM_DRIVER=llvmpipe' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Verify the signed Nook interactions
+        shell: pwsh
+        run: |
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-signed-nook" -Nook -NookInteraction
+      - name: Upload self-signed development package
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-self-signed-development
+          path: |
+            ${{ runner.temp }}/native-development-signing/*.zip
+            ${{ runner.temp }}/native-development-signing/signing-receipt.json
+            ${{ runner.temp }}/native-development-signing/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload Nook acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-signed-nook-evidence
+          path: ${{ runner.temp }}/native-signed-nook/**
+          if-no-files-found: warn
+          retention-days: 14
+
   publish-native:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/codex/native-desktop'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && !inputs.development_signing && github.ref == 'refs/heads/codex/native-desktop'
     needs: native-preview
     runs-on: ubuntu-latest
     permissions:

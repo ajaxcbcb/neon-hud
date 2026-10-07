@@ -1,6 +1,6 @@
-# Meet Neon HUD
+# Neon HUD feature guide
 
-## Native Nook preview
+## Native Nook · 0.2.0-alpha.6
 
 A tiny black capsule opens into a shallow row of tools: music, a week calendar, notes, timer wheels, tasks and quick actions. Nook and Tray switch between the widget overview and a persistent file shelf. Hover peeks, click opens, pin keeps it open and Escape collapses it. Choose either layout in **Preferences → Instruments → HUD layout**. The original movable/compressible neon pill keeps its saved position; both presentations use custom native frames. Existing profiles keep their presentation, and fresh profiles start in Nook.
 
@@ -8,11 +8,54 @@ The numerical bottom rail keeps CPU, GPU, memory, network, selected drives, Code
 
 Notes include B/I/U; tasks include completion and favourites; deadline timers include hour/minute/second wheels and presets. Windows media controls use system sessions, Mac Music control is opt-in, calendar accepts local recurring ICS events, and Mac can request native Calendar permission. The explicit camera mirror stops when hidden or under pressure. Permission and unsupported-source states are visible. The custom three-step Settings flow retains themes, motion, configured drives, tray access, opt-in startup and signed native updates.
 
-[Nook release notes](releases/v0.2.0-alpha.6.md) · [Native controls](../src-native/README.md) · [Reference evidence](../reference-learning/notchnook/study.md) · [Validation](VALIDATION.md)
+[Download alpha.6](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6) · [Release notes](releases/v0.2.0-alpha.6.md) · [Native setup and controls](../src-native/README.md) · [Reference evidence](../reference-learning/notchnook/study.md) · [Validation](VALIDATION.md)
 
-## Existing WebView release
+### Measurements and attention
 
-The remaining feature introduction describes the established WebView release. Its Anime.js effects and installer packages belong to that renderer.
+| Metric | Numerical reading | Visual and attention behavior |
+| --- | --- | --- |
+| CPU | Total/per-core utilization and reported frequency | Speedometer, per-core bars and sustained-pressure badge. Temperature appears only from a supported sensor. |
+| GPU | Adapter identity and supported utilization/memory | Gradient instruments and pressure badge; unavailable fields stay labeled. Windows supports native counters; Mac global activity remains source-dependent. |
+| RAM | Used/total GiB and percentage | Bar and sustained-pressure badge. |
+| Network | Upload/download MiB/s and history | Activity graphs; colors describe relative traffic, not measured link congestion. |
+| Storage | Selected mounted volumes, used/free/total GiB | Capacity bars and low-free-space attention. Disconnected selections remain saved. |
+| Codex / Claude | Reported remaining allowance, window and reset | Five-hour and weekly windows remain separate. Fresh/stale/waiting states distinguish readings from configuration. |
+| Allowance drain | Time-weighted percentage/hour and estimated depletion | Fast-drain attention when measured pace projects depletion before reset. At least two minutes of fresh readings are required. |
+
+Green → amber → hot pink indicates increasing system stress or decreasing AI allowance. Numbers and explanatory **!** badges accompany the color. Supported high temperature can explain pressure; thermal throttling is not measured. Smart resource mode spaces out its own polling and quiets motion under sustained pressure without closing other applications or changing power settings. Hardware savings are not yet measured.
+
+Claude's bridge observes explicit questions and permission requests, briefly reacts at the icon and retains a question badge. Reduced-motion preferences use a static badge. Codex desktop conversations are not observed for questions.
+
+### Everyday tools
+
+| Tool | Available behavior |
+| --- | --- |
+| Music | Windows system media session playback/seek; opt-in macOS Music control. |
+| Calendar | Local ICS file, timezone-aware recurring events; opt-in EventKit Calendar on Mac. |
+| Notes | Local notes with B/I/U formatting. |
+| Tasks | Completion, favourites and pages. |
+| Timer | Deadline-based hour/minute/second wheels and 1/5/25-minute presets. |
+| Tray shelf | Persistent local file references; distinct from the OS system tray. |
+| Battery and quick actions | Supported battery status and focused utility actions. |
+| Camera mirror | Opt-in preview; requires a validated frame and stops when hidden, collapsed or under pressure. |
+
+Denied permissions and absent hardware/services remain visible. Notes, tasks, timer state and file references use bounded recoverable local storage; a timer does not need the HUD to stay expanded.
+
+### Small, interactive and persistent
+
+Nook measures 240 × 40 logical pixels collapsed, 520 × 112 at hover and 900 × 192 expanded, clamped to the monitor work area. The alternate floating pill measures 160 × 56 compressed or 280 × 56 regular. Right-click/Shift+F10 opens Settings, compression, pause/resume, hide, reset position and Quit. Hover panels follow the current monitor and open away from its edges. Tray/menu-bar access remains available while hidden.
+
+Neon Circuit, Cyberpunk Night and Aurora apply to the custom native UI. Quiet, Playful and Chaotic motion react to input and respect reduced-motion preferences. The Rust renderer uses egui/glow, with no HTML/CSS/JavaScript or WebView in its rendering path. The three setup steps are fixed pages without scrolling or an OS title bar.
+
+Existing profiles retain presentation, placement and monitoring choices. Saved Codex connection intent survives retries and restart; stale allowance keeps its original timestamp. Explicit disconnect clears it. Claude migration retargets owned bridge commands without replacing unrelated configuration. Startup is opt-in and a replacement should preserve an existing choice.
+
+Automatic native update checks and low-pressure downloads are configurable. **Check now → Download update → Restart and update** uses signed metadata/archive verification, saved preferences, normal shutdown and replacement acknowledgement. The public alpha.4-to-alpha.6 GUI upgrade passed. Native restart requires the restart action; the legacy WebView automatic-install policy below is separate.
+
+Codex allowance is not ordinary ChatGPT chat quota. Cumulative spent-token counts are not supplied by the connected quota sources; drain measures allowance against elapsed time. The official Codex helper and some platform utility helpers mean a strict single OS process is not guaranteed. Windows/Mac packaging passed; Mac permissions/hardware and resource savings require runtime measurements.
+
+## Legacy WebView release · 0.1.4
+
+The remaining introduction describes the older WebView renderer. Its Anime.js effects, NSIS/universal-DMG packages, extended context menu and automatic-install policy belong to that release.
 
 A tiny, interactive desktop instrument panel that stays out of your way. Start with **Appearance**, choose your neon atmosphere, connect optional AI sources, then set the measurements you want. The default 280 × 56 HUD is a floating side pill and can hide to the system tray or Mac menu bar. Hover reveals measurements and right-click opens quick controls; click opens the full meters and graphs.
 
@@ -50,4 +93,4 @@ Automatic checks run on startup and every six hours. Enable **Automatically inst
 
 ## Local by design
 
-Settings and minimal readings stay in per-user application data. Provider sign-in stays with the installed provider CLI. No passwords, API keys or transcripts are collected. See the [README](../README.md), [validation evidence](VALIDATION.md), [changelog](../CHANGELOG.md) and [preview release notes](releases/v0.1.3.md).
+Settings and minimal readings stay in per-user application data. Provider sign-in stays with the installed provider CLI. No passwords, API keys or transcripts are collected. See the [README](../README.md), [validation evidence](VALIDATION.md), [changelog](../CHANGELOG.md) and [WebView release notes](releases/v0.1.4.md).
