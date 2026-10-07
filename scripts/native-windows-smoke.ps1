@@ -275,14 +275,19 @@ try {
             $menuDeadline = (Get-Date).AddSeconds(2)
             do {
                 Start-Sleep -Milliseconds 80
-                $menu = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD · Controls' } | Select-Object -First 1
-            } while ($null -eq $menu -and (Get-Date) -lt $menuDeadline)
+                $menus = @([NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD · Controls' })
+                if ($menus.Count -gt 1) { throw "Duplicate Controls windows at $edge" }
+                $menu = if ($menus.Count -eq 1) { $menus[0] } else { $null }
+                $safe = $false
+                if ($null -ne $menu) {
+                    $safe = $menu.Rect.Left -ge $work.Left -and $menu.Rect.Top -ge $work.Top -and $menu.Rect.Right -le $work.Right -and $menu.Rect.Bottom -le $work.Bottom
+                    if ($xKey -eq 'left') { $safe = $safe -and $menu.Rect.Left -ge $xs[$xKey]+$hudWidth+4 }
+                    if ($xKey -eq 'right') { $safe = $safe -and $menu.Rect.Right -le $xs[$xKey]-4 }
+                    if ($yKey -eq 'top') { $safe = $safe -and $menu.Rect.Top -ge $ys[$yKey]+$hudHeight+4 }
+                    if ($yKey -eq 'bottom') { $safe = $safe -and $menu.Rect.Bottom -le $ys[$yKey]-4 }
+                }
+            } while (-not $safe -and (Get-Date) -lt $menuDeadline)
             if ($null -eq $menu) { throw "Real right click did not open controls at $edge" }
-            $safe = $menu.Rect.Left -ge $work.Left -and $menu.Rect.Top -ge $work.Top -and $menu.Rect.Right -le $work.Right -and $menu.Rect.Bottom -le $work.Bottom
-            if ($xKey -eq 'left') { $safe = $safe -and $menu.Rect.Left -ge $xs[$xKey]+$hudWidth+4 }
-            if ($xKey -eq 'right') { $safe = $safe -and $menu.Rect.Right -le $xs[$xKey]-4 }
-            if ($yKey -eq 'top') { $safe = $safe -and $menu.Rect.Top -ge $ys[$yKey]+$hudHeight+4 }
-            if ($yKey -eq 'bottom') { $safe = $safe -and $menu.Rect.Bottom -le $ys[$yKey]-4 }
             if (-not $safe) { throw "Controls were clipped or opened outward at $edge" }
             $width=0; $height=0; $colors=0
             $screenshot = Join-Path $OutputDirectory "native-controls-$edge.png"
@@ -406,10 +411,10 @@ try {
         elapsedSeconds = [math]::Round(((Get-Date)-$started).TotalSeconds, 2)
         processExited = $process.HasExited
         successfulMenuEdges = @($menuChecks)
-        visibleWindows = @([NativeHudCapture]::VisibleWindows([uint32]$process.Id) | ForEach-Object { [pscustomobject]@{ title=$_.Title; rectangle=$_.Rect } })
+        visibleWindows = @([NativeHudCapture]::VisibleWindows([uint32]$process.Id) | ForEach-Object { [pscustomobject]@{ title=$_.Title; handle=$_.Handle.ToInt64(); rectangle=[pscustomobject]@{ left=$_.Rect.Left; top=$_.Rect.Top; right=$_.Rect.Right; bottom=$_.Rect.Bottom } } })
         foregroundWindow = [NativeHudCapture]::GetForegroundWindow().ToInt64()
         screenshots = @(Get-ChildItem -LiteralPath $OutputDirectory -Filter 'native-*.png' -File | Select-Object -ExpandProperty Name)
-    } | ConvertTo-Json | Set-Content -LiteralPath $receiptPath
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $receiptPath
     throw
 } finally {
     $process.Refresh()

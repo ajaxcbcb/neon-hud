@@ -128,6 +128,16 @@ function Open-Controls([uint32]$PidValue) {
     [UpdateProofDesktop]::Click($hud, 40, 25, $true)
     return (Wait-Window $PidValue 'Neon HUD · Controls')
 }
+function Open-StartupSettings([uint32]$PidValue) {
+    $menu = Open-Controls $PidValue
+    [UpdateProofDesktop]::Click($menu, 120, 58, $false)
+    $settings = Wait-Window $PidValue 'Neon HUD · Settings'
+    Start-Sleep -Milliseconds 300
+    [UpdateProofDesktop]::Click($settings, 433, 97, $false)
+    [UpdateProofDesktop]::Click($settings, 170, 179, $false)
+    Start-Sleep -Milliseconds 300
+    return $settings
+}
 
 try {
     $before = Download-Release $FromTag 'from'
@@ -172,8 +182,25 @@ try {
     $offer = Invoke-HudCli $installedExe @('--update-check')
     if ($offer.status -ne 'available' -or $offer.version -ne $after.metadata.version -or -not $offer.signed -or $offer.installedVersion -ne $before.metadata.version) { throw 'Live public channel did not offer the expected newer signed release' }
     $receipt.beforeCheck = $offer
-    $install = Invoke-HudCli $installedExe @('--update-install')
-    if ($install.status -ne 'restart_requested' -or $install.version -ne $after.metadata.version) { throw 'Update helper was not requested' }
+    $oldGui = Start-Process -FilePath $installedExe -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $outputPath 'old-gui-stdout.log') -RedirectStandardError (Join-Path $outputPath 'old-gui-stderr.log')
+    $oldSettings = Open-StartupSettings ([uint32]$oldGui.Id)
+    [UpdateProofDesktop]::Capture($oldSettings, (Join-Path $outputPath 'old-update-settings.png'))
+    [UpdateProofDesktop]::Click($oldSettings, 63, 373, $false)
+    Start-Sleep -Seconds 20
+    [UpdateProofDesktop]::Capture($oldSettings, (Join-Path $outputPath 'old-update-offer.png'))
+    [UpdateProofDesktop]::Click($oldSettings, 151, 373, $false)
+    $downloadDeadline = (Get-Date).AddSeconds(65)
+    do {
+        Start-Sleep -Milliseconds 200
+        $stages = @(Get-ChildItem -LiteralPath (Join-Path $profilePath 'native-updates') -Filter 'ticket.json' -File -Recurse -ErrorAction SilentlyContinue)
+    } while ($stages.Count -ne 1 -and (Get-Date) -lt $downloadDeadline)
+    if ($stages.Count -ne 1) { throw 'Settings Download did not produce a verified update stage' }
+    Start-Sleep -Milliseconds 500
+    [UpdateProofDesktop]::Capture($oldSettings, (Join-Path $outputPath 'old-update-ready.png'))
+    [UpdateProofDesktop]::Click($oldSettings, 177, 373, $false)
+    if (-not $oldGui.WaitForExit(15000)) { throw 'Settings Restart and update did not exit the old GUI normally' }
+    $receipt.guiCheckDownloadRestartClicked = $true
+    $receipt.oldGuiExitedNormally = $true
     $deadline = (Get-Date).AddSeconds(65)
     do {
         Start-Sleep -Milliseconds 300

@@ -209,6 +209,7 @@ struct App {
     hover: Option<(String, Rect)>,
     controls: Option<Rect>,
     controls_focused: bool,
+    controls_generation: u64,
     drain: Drain,
     history: VecDeque<(f64, Option<f64>)>,
     smoke: bool,
@@ -327,6 +328,7 @@ impl App {
             hover: None,
             controls: None,
             controls_focused: false,
+            controls_generation: 0,
             drain: Drain::default(),
             history: VecDeque::new(),
             smoke,
@@ -844,6 +846,7 @@ impl App {
                     }
                     self.controls = ctx.input(|i| i.viewport().outer_rect);
                     self.controls_focused = false;
+                    self.controls_generation = self.controls_generation.wrapping_add(1);
                     self.hover = None;
                 }
             });
@@ -1905,7 +1908,8 @@ impl App {
         };
         let p = self.palette();
         ctx.show_viewport_immediate(
-            ViewportId::from_hash_of("controls"),
+            // Each opening gets fresh native focus, Escape and position state.
+            ViewportId::from_hash_of(("controls", self.controls_generation)),
             ViewportBuilder::default()
                 .with_title("Neon HUD · Controls")
                 .with_icon(desktop::app_icon())
