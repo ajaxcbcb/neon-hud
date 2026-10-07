@@ -1031,7 +1031,11 @@ async fn connect_codex(
         state
             .lock()
             .map_err(|e| e.to_string())?
-            .connect(login.unwrap_or(true), |url| app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string()))
+            .connect(login.unwrap_or(true), |url| {
+                app.opener()
+                    .open_url(url, None::<&str>)
+                    .map_err(|e| e.to_string())
+            })
     })
     .await
     .map_err(|e| e.to_string())?

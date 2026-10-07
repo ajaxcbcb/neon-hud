@@ -44,16 +44,18 @@ jobs:
             src-native -> target
             src-tauri -> target
       - name: Format native source
+        id: format
+        continue-on-error: true
         run: cargo fmt --manifest-path src-native/Cargo.toml --check
       - name: Generate formatting repair patch
-        if: failure()
+        if: steps.format.outcome == 'failure'
         shell: bash
         run: |
           cargo fmt --manifest-path src-native/Cargo.toml
           cargo fmt --manifest-path src-tauri/Cargo.toml
           git diff --binary -- src-native src-tauri > "$RUNNER_TEMP/native-format.patch"
       - name: Upload formatting repair patch
-        if: failure()
+        if: always() && steps.format.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: native-format-repair-${{ matrix.os }}
@@ -126,3 +128,9 @@ jobs:
             src-native/Cargo.lock
           if-no-files-found: error
           retention-days: 14
+      - name: Enforce formatting gate
+        if: always() && steps.format.outcome == 'failure'
+        shell: bash
+        run: |
+          echo 'Native source formatting failed; see the runner-specific repair patch artifact.' >&2
+          exit 1
