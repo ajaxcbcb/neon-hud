@@ -45,6 +45,21 @@ jobs:
             src-tauri -> target
       - name: Format native source
         run: cargo fmt --manifest-path src-native/Cargo.toml --check
+      - name: Generate formatting repair patch
+        if: failure()
+        shell: bash
+        run: |
+          cargo fmt --manifest-path src-native/Cargo.toml
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          git diff --binary -- src-native src-tauri > "$RUNNER_TEMP/native-format.patch"
+      - name: Upload formatting repair patch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-format-repair-${{ matrix.os }}
+          path: ${{ runner.temp }}/native-format.patch
+          if-no-files-found: warn
+          retention-days: 14
       - name: Test native source
         run: cargo test --manifest-path src-native/Cargo.toml
       - name: Verify native dependency closure
