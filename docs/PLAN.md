@@ -6,7 +6,7 @@ Objective: Deliver a small native Windows/Mac HUD, with fixed settings pages, nu
 
 Status: The separate unsigned native v0.2.0-alpha.1 is installed and running on the target Windows machine, with verified Desktop and Start menu shortcuts and a rendered 280 × 56 pill. The original v0.1.4 profile and Claude configuration remain unchanged. The native Rust preview on `codex/native-desktop` passed Windows/Mac tests, locked builds and Windows rendered-page inspection; its public artifact digests are verified. Target-machine Settings access from the pill was inconclusive, and desktop input has stopped.
 
-Next: Verify and package edge-aware native hover placement for all screen edges and corners; check Windows/Mac tests and native Windows hover renders in cloud CI before an admitted target-machine update. Pill Settings/context-menu access remains open. Tray/drag/startup checks need their own runtime reservation. Complete in-process connectors and signed native updates before migration. Keep the stable updater manifest on 0.1.3 until replacement gates pass.
+Next: Publish the verified alpha.2 packages and apply an admitted target-machine update after the current native preview exits normally. Pill Settings/context-menu access remains open. Tray/drag/startup checks need their own runtime reservation. Complete in-process connectors and signed native updates before migration. Keep the stable updater manifest on 0.1.3 until replacement gates pass.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@ Next: Verify and package edge-aware native hover placement for all screen edges 
 | Headless Rust core | Native core worker | Optional desktop features | Source | Desktop and headless cloud regression tests passed on both platforms |
 | Native pill/settings/instruments | Coordinator | Headless core | Light source + cloud | Fixed pages without scrolling; preview profile and opt-in startup separate from installed app |
 | Native packages/render inspection | CI / coordinator | Integrated source | Cloud | Passed; Windows portable ZIP and Apple Silicon Mac app/DMG, unsigned preview; all fixed pages and pill inspected |
-| Edge-aware hover | Coordinator | Native pill + cached monitor bounds | Light source + cloud | In progress; inward placement, compression, negative monitor origins and display scaling tests; actual Windows eight-edge hover capture |
+| Edge-aware hover | Coordinator | Native pill + cached monitor bounds | Light source + cloud | Passed exact-source Windows/Mac CI; eight Windows cursor positions opened inward and stayed in the work area; native captures inspected |
 | Native target-machine check | Coordinator | Verified artifacts + admission | Own-app runtime | Installed and pill inspected; shortcuts and profile preservation passed; Settings from pill inconclusive, input stopped; tray/drag/startup remain open |
 | Strict single OS process | Coordinator | In-process provider design | Source + runtime | Open; native renderer removes WebView, existing Codex and Claude helpers remain |
 | Native automatic updates | Coordinator | Signed release/restart path | Source + package/runtime | Open; preview does not consume installed updater manifest |

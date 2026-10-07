@@ -2,6 +2,13 @@
 
 Checked on 7 October 2026.
 
+## 0.2.0-alpha.2 screen-aware hover
+
+- [Exact-source CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37602211912), source `173101a3a8f5eeaf4f85ac6c043de7e05607e5cb`, passed formatting, eight native tests on each platform, 31 Windows and 28 Mac core tests in both feature configurations, locked builds, native dependency closure and both platform packages.
+- Placement uses cached monitor bounds and the current pill rectangle. Tests cover four edges, four corners, compressed and regular sizes, movement, negative monitor origins, mixed display scaling, straddling displays and tiny screens. Hovering does not resize the pill or persist a layout change.
+- Actual Windows cursor input exercised all eight edge/corner positions. Window rectangles proved that every hover panel opened inward, with a gap from the pill and within the monitor work area. Native screenshots were inspected; all fixed settings pages, instruments and the tiny pill also passed rendered checks. The isolated hover session exited normally with code 0. Its inactive single-process observation does not prove connector-inclusive single-process operation.
+- Downloaded packages passed Windows x64 PE and Mac arm64 Mach-O architecture checks, project license and font-notice checks, and Windows exclusion of CI software-OpenGL DLLs. The Mac app version is 0.2.0. The stable updater manifest still targets 0.1.3. Target-machine alpha.2 installation and hover interaction are pending; Mac interaction remains unverified.
+
 ## 0.1.4 floating placement and compression
 
 - Source adds a native drag grip, physical-pixel keyboard nudging, a 160 × 56 compressed window and persisted custom placement. Geometry tests cover DPI changes, removed displays, duplicate display names and popover growth at all four edges independently of a corner preset.
