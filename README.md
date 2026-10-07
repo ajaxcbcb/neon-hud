@@ -1,8 +1,22 @@
 # Neon HUD
 
-A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
+A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance, for Windows and macOS.
 
-A [native Rust desktop preview](src-native/README.md) is in development on `codex/native-desktop`: a directly drawn floating pill and custom neon settings frame with three fixed setup steps, without a scrolling dashboard. It uses a separate preview profile. The release and verification status below distinguish the installed WebView version from this new renderer.
+## Native Rust desktop preview
+
+[Download v0.2.0-alpha.1](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.1) · [Native controls and profile](src-native/README.md) · [Native release notes](docs/releases/v0.2.0-alpha.1.md) · [Validation](docs/VALIDATION.md)
+
+Rust/egui/glow draws the floating pill and custom neon frame directly. Appearance, Connections and Preferences are fixed setup steps. Theme cards, motion tiles and a labeled sample pill retain the playful layout; settings have no scrolling or conventional OS title bar. New profiles start at 160 × 56 logical pixels, with a 280 × 56 regular mode.
+
+![Native custom neon settings frame captured on Windows](docs/assets/native-settings.png)
+
+Actual Windows CI capture. The appearance preview is labeled **SAMPLE DATA**. The separate instrument window and tiny pill were also rendered and inspected. Windows and Mac builds passed; target-machine interaction, Mac runtime and performance measurements remain open.
+
+Windows: extract the portable ZIP and run `neon-hud-native.exe`. Mac: open the app from the DMG or ZIP; this native preview supports Apple Silicon (arm64). Packages are unsigned. The preview imports preferences once into a separate profile and has opt-in startup. Native automatic updates and strict single-process connectors are still being built. See the native release notes before switching.
+
+## Existing WebView release
+
+The installed v0.1.4 uses Rust, Tauri 2, Svelte and SVG instruments. The native preview is a separate app and does not replace it or change its updater manifest. The following installation and feature information describes the existing release.
 
 [Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.4.md)
 

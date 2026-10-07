@@ -1,13 +1,15 @@
 # Changelog
 
-## [0.2.0-alpha.1] - Native desktop preview in development
+## [0.2.0-alpha.1] - 2026-10-07
 
 - Rust/egui/glow renderer with a 160 × 56 compressed pill and 280 × 56 regular pill, native tray controls and separate instrument windows.
 - Custom neon settings frame with Appearance, Connections and Preferences steps, theme cards and a sample pill preview. Instruments and Startup choices fit inside Preferences; multiple drives use pages. No scroll areas.
 - Custom neon metric icons, gradient gauges/bars, brief question reactions and motion that quiets under pressure.
 - Separate preview preferences, monitor-relative placement by display identity, debounced saves and opt-in preview startup.
 - Shared Claude bridge readings remain available while preview preferences stay separate. Codex and Claude connectors still use helpers; strict single-process operation and signed native automatic updates remain unfinished.
-- Windows/macOS cloud build and rendered-preview checks are in progress. This preview has not replaced the installed v0.1.4 or the automatic-update manifest.
+- Windows/macOS tests and locked builds passed. All three setup steps, both Preferences pages, instruments and the 160 × 56 pill were rendered and inspected on Windows CI. An unsigned Windows x64 ZIP and Apple Silicon Mac app/DMG are available as a separate prerelease.
+- Embedded Ubuntu Bold headings, vector checkmarks/arrows and a fixed footer retain the reference layout without unsupported glyphs or taskbar overlap in the inspected render. Font license and copyright notices are bundled.
+- This preview has not replaced the installed v0.1.4 or the automatic-update manifest. Native installation, Mac runtime and hardware performance checks remain open.
 
 ## [0.1.4] - 2026-10-07
 
