@@ -9,7 +9,12 @@ $stdout = Join-Path $OutputDirectory 'stdout.log'
 $stderr = Join-Path $OutputDirectory 'stderr.log'
 $receiptPath = Join-Path $OutputDirectory 'receipt.json'
 
-Add-Type -ReferencedAssemblies System.Drawing @'
+$drawingReferences = @(
+    Get-ChildItem -LiteralPath (Join-Path $PSHOME 'ref') -Filter '*.dll' -File | Select-Object -ExpandProperty FullName
+) + @([System.Drawing.Bitmap].Assembly.Location) + @(
+    Get-ChildItem -LiteralPath $PSHOME -Filter 'System.Private.Windows.*.dll' -File | Select-Object -ExpandProperty FullName
+)
+Add-Type -ReferencedAssemblies $drawingReferences @'
 using System;
 using System.Collections.Generic;
 using System.Drawing;

@@ -91,7 +91,10 @@ pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, p: Palette) {
             p.panel
         };
         ui.painter().line_segment(
-            [c + Vec2::angled(a) * 38.0_f32, c + Vec2::angled(a) * 45.0_f32],
+            [
+                c + Vec2::angled(a) * 38.0_f32,
+                c + Vec2::angled(a) * 45.0_f32,
+            ],
             Stroke::new(3.0_f32, color),
         );
     }

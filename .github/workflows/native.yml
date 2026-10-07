@@ -40,6 +40,7 @@ jobs:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           workspaces: |
             src-native -> target
             src-tauri -> target
