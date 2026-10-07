@@ -1,5 +1,21 @@
 # Neon HUD
 
+The **native Nook preview** is a compact Rust desktop HUD for Windows x64 and Apple Silicon Mac. A small black capsule peeks on hover and expands into media, calendar, notes, tasks, timer and file-reference widgets. CPU/GPU/RAM/network/drives/Codex/Claude readings, allowance drain indicators, tray access and the custom neon Settings remain available.
+
+[Native Nook guide and setup](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/README.md) · [Native source](https://github.com/ajaxcbcb/neon-hud/tree/codex/native-desktop/src-native) · [Alpha.6 release](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6) · [Features](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/docs/FEATURES.md) · [Changelog](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/CHANGELOG.md)
+
+![Native Nook preview with sample readings](https://raw.githubusercontent.com/ajaxcbcb/neon-hud/codex/native-desktop/docs/assets/native-nook.png)
+
+Hosted Windows screenshot with sample readings. Existing profiles retain Pill until **Preferences → Instruments → HUD layout → Nook** is selected; explicit choices persist. Nook peeks on hover, expands on click, pins open and collapses with Escape. Right-click or Shift+F10 opens Controls.
+
+**Windows target status:** Defender quarantined the installed alpha.6 executable. Target launch and Nook replacement are blocked. A separate self-signed development package is [being verified in cloud CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37682274154); it does not establish public publisher trust or Defender clearance and does not change public release assets or the updater feed. See [validation evidence](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/docs/VALIDATION.md).
+
+The native preview is independent of NotchNook; exact reference animation timing is unmeasured. Apache 2.0/MIT and third-party notices are bundled.
+
+## Legacy WebView edition
+
+The following installation and development instructions describe the earlier Tauri/Svelte edition maintained on `main`. Use the native guide above for the Nook preview.
+
 A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
 
 [Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.4.md)
