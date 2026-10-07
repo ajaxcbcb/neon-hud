@@ -1,0 +1,19 @@
+{
+  "version": "0.1.1",
+  "notes": "Pocket chaos: tiny side pill, responsive connection feedback and signed automatic updates. See the 0.1.1 release notes on GitHub.",
+  "pub_date": "2026-10-07T03:04:23Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySGl6a1duOUc5WVFmVHdOcUpBTkcraEYyK2RrcEdzcTVFQnQrVFhCWWlPV2hNeU4wQ2huM1FscEhYYlBZQU4rY2VTb05xTDRDYzlUbXUvQUhCTVVVYndvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQyMDE5CWZpbGU6TmVvbiBIVURfMC4xLjFfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMS4xClR6Uld0dm5JcFFPZXhxVkZNcXBZQU90c0h1OGQzZEt0bU9ZKzd5aWRjOHVsYlV1cG5LUmJaOEplVTNUaGpPRjkvT2xOWG1LdVpFcHMxblVKM2ZQU0FBPT0K",
+      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.1/Neon.HUD_0.1.1_x64-setup.exe"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySHNqdUd5R0VCT280SWxaQms4dmhkd3Nra1lkR1d3ZGpzQW82TUR4OERsaWlFb1g1VlZXTXFDUjkvZTFPU2hoeW9xdVl6YWVaTmd4SmJiVks2MEM0OUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQyMDI5CWZpbGU6TmVvbiBIVUQuYXBwLnRhci5negl2ZXJzaW9uOjAuMS4xClpLd2huelpCVExTZ2phMzgzdjBSUzdld1k1OGpoR2JFUHdiLzZGNVIrRWhsRU1EdkZickRXVk9sQktvQ2dTV1NmUEhWK3R6UEZSc2VEYTVCNTFGQkNRPT0K",
+      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.1/Neon.HUD.app.tar.gz"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySHNqdUd5R0VCT280SWxaQms4dmhkd3Nra1lkR1d3ZGpzQW82TUR4OERsaWlFb1g1VlZXTXFDUjkvZTFPU2hoeW9xdVl6YWVaTmd4SmJiVks2MEM0OUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQyMDI5CWZpbGU6TmVvbiBIVUQuYXBwLnRhci5negl2ZXJzaW9uOjAuMS4xClpLd2huelpCVExTZ2phMzgzdjBSUzdld1k1OGpoR2JFUHdiLzZGNVIrRWhsRU1EdkZickRXVk9sQktvQ2dTV1NmUEhWK3R6UEZSc2VEYTVCNTFGQkNRPT0K",
+      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.1/Neon.HUD.app.tar.gz"
+    }
+  }
+}

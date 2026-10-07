@@ -4,9 +4,9 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: v0.1.0 delivered. v0.1.1 refinement in progress: tiny floating pill, transparent desktop utility window, and responsive source connection feedback. Priority P1.
+Status: v0.1.1 published: tiny floating pill, transparent desktop utility window, responsive source connection feedback and signed updater assets. Windows installation is pending shared host admission. Next source increment: real GPU adapters and display-synced animation. Priority P1.
 
-Next: Package the verified v0.1.1 source in cloud CI, publish matching signed update assets and manifest, then install the exact Windows artifact after shared host admission. No local native build or installer is running.
+Next: Verify the public update endpoint, add GPU telemetry and adjustable fast hardware sampling with display-synced animation, then run frontend and cloud native checks. Install only the verified final Windows artifact after shared host admission. No local native build or installer is running.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
@@ -16,7 +16,9 @@ Next: Package the verified v0.1.1 source in cloud CI, publish matching signed up
 | Windows installation | Coordinator | Verified Windows installer | Local installer | Complete; installer exit 0, visible Appearance window and inspected capture |
 | Public preview | Coordinator | Verified installers | Release write | Complete; public v0.1.0 release, both assets, matching hashes and validation evidence |
 
-Current refinement: frontend/layout/config/docs integrated; async provider commands, exact bridge detection and native updater integrated. Independent review findings are addressed: prior refresh failure isolation, unsigned PR packaging, and the required signed manifest publication gate. 36 frontend tests, zero Svelte errors/warnings, production build, Rust formatting and pill browser fixture passed. Native packaging and installation are queued; no local native compilation is reserved. Release writes and installation run sequentially; runtime estimates are unknown.
+Current refinement: frontend/layout/config/docs integrated; async provider commands, exact bridge detection and native updater integrated. Independent review findings are addressed: prior refresh failure isolation, unsigned PR packaging, and the signed manifest publication gate. 36 frontend tests, zero Svelte errors/warnings, production build, Rust formatting and pill browser fixture passed. Windows/Mac signed packaging and Windows launch passed in cloud CI; artifact hashes and update signatures verified before publication. Installation is queued; no local native compilation is reserved. Release writes and installation run sequentially; runtime estimates are unknown.
+
+GPU/high-refresh increment: the coordinator owns sampling and UI integration; a backend worker owns the GPU provider module and dependency declarations. Acceptance covers multiple adapters, honest unavailable/stale fields, cached native discovery, GPU utilization/memory/temperature where supported, isolated hardware/animation/quota cadences, hidden-window backoff, pressure/reduced-motion handling and timer cleanup. Fast sampling is adjustable down to 250 ms for cheap counters; animation follows the display without a fixed 60 Hz cap. Native frame rate and telemetry accuracy require separate installed-platform evidence.
 
 Verified: 21 frontend unit tests, Svelte checks, production build, dependency audit, browser-fixture interaction/adaptive checks, 18 native tests each on Windows/Mac, both platform installers, Windows launch and installed Appearance capture. Live provider integration, native Mac installation/runtime, signing/notarization and full-process resource measurements remain unverified; see VALIDATION.md.
 

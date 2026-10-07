@@ -12,7 +12,11 @@ Checked on 7 October 2026.
 - Independent review identified and resolved the prior-refresh rejection race and fork-PR signing-secret gap. Publishing a real signed platform manifest is required before updater delivery can be claimed.
 - The installed Claude bridge was configured with all seven hooks; the official CLI confirmed authenticated status. No live account-limit reading has been observed yet. Fixtures use sample data and do not prove provider quota.
 
-Native 0.1.1 tests/packages, published manifest checks and installed-window proof are pending at this checkpoint. The existing 0.1.0 evidence follows.
+- [Final signed native CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37564389145), source `908c9e4625a4552d69a4fee10c7eb102764bc8d7`, passed frontend verification, Windows/Mac tests and packaging, and Windows launch. The universal Mac build explicitly includes the application updater archive alongside the DMG; CI checks both platforms have a matching signed update payload.
+- The [public v0.1.1 preview](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.1) contains Windows setup, universal Mac DMG, both signed update payloads and SHA256SUMS.txt. All five downloaded artifact digests matched GitHub's published asset digests. Both updater signatures and their trusted comments verified against the configured public key before publication.
+- `updates/latest.json` points to the verified Windows x64 and universal Mac archives, covering Intel and Apple Silicon updater targets.
+
+Installed 0.1.1 window and updater execution remain pending. Updater signing is distinct from OS code signing/notarization, which is not configured. The existing 0.1.0 evidence follows.
 
 ## 0.1.0 baseline
 
