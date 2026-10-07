@@ -46,7 +46,9 @@ use tray_icon::{
 
 pub fn profile_dir(smoke: bool) -> Result<PathBuf, String> {
     if smoke {
-        return Ok(std::env::temp_dir().join(format!("neon-native-smoke-{}", std::process::id())));
+        let profile = std::env::temp_dir().join(format!("neon-native-smoke-{}", std::process::id()));
+        std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+        return Ok(profile);
     }
     let base = directories::BaseDirs::new().ok_or("OS configuration directory unavailable")?;
     let original = base.config_dir().join("io.github.ajaxcbcb.neonhud");
