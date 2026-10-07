@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0-alpha.2] - 2026-10-07
+
+- Native hover readings open inward at all four screen edges and corners and stay within the HUD monitor. Placement follows dragging and compression, including negative monitor origins and different display scales.
+- Placement uses cached display bounds and does not resize the pill or rewrite saved preferences.
+- Added geometric edge/monitor tests and a Windows CI check that moves the native pill and hovers with the real cursor at eight positions.
+
 ## [0.2.0-alpha.1] - 2026-10-07
 
 - Rust/egui/glow renderer with a 160 × 56 compressed pill and 280 × 56 regular pill, native tray controls and separate instrument windows.

@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
-    [ValidateRange(0, 3)][int]$SettingsPage = 0
+    [ValidateRange(0, 3)][int]$SettingsPage = 0,
+    [switch]$HoverEdges
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
@@ -39,6 +40,8 @@ public static class NativeHudCapture {
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
 
     public static List<WindowInfo> VisibleWindows(uint launchedPid) {
         var windows = new List<WindowInfo>();
@@ -57,11 +60,13 @@ public static class NativeHudCapture {
         return windows;
     }
 
-    public static string Capture(IntPtr window, string path, out int width, out int height, out int distinctColors) {
-        ShowWindowAsync(window, 9);
-        SetForegroundWindow(window);
+    public static string Capture(IntPtr window, string path, bool activate, out int width, out int height, out int distinctColors) {
+        if (activate) {
+            ShowWindowAsync(window, 9);
+            SetForegroundWindow(window);
+        }
         System.Threading.Thread.Sleep(350);
-        if (GetForegroundWindow() != window)
+        if (activate && GetForegroundWindow() != window)
             throw new InvalidOperationException("Native window could not be brought to the foreground");
         RECT rect;
         if (!GetWindowRect(window, out rect)) throw new InvalidOperationException("GetWindowRect failed");
@@ -84,7 +89,7 @@ public static class NativeHudCapture {
             }
             distinctColors = CountColors(bitmap);
             bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-            return "foreground-screen-copy";
+            return activate ? "foreground-screen-copy" : "screen-copy";
         }
     }
     private static int CountColors(Bitmap bitmap) {
@@ -101,14 +106,17 @@ public static class NativeHudCapture {
 '@
 
 $started = Get-Date
-$process = Start-Process -FilePath $executablePath -ArgumentList '--smoke', "--smoke-page=$SettingsPage" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+$arguments = @('--smoke', "--smoke-page=$SettingsPage")
+if ($HoverEdges) { $arguments += '--smoke-hover' }
+$process = Start-Process -FilePath $executablePath -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 try {
     $deadline = $started.AddSeconds(7)
     $expected = [ordered]@{
         hud = 'Neon HUD Native'
         settings = 'Neon HUD · Settings'
     }
-    if ($SettingsPage -eq 0) { $expected.instruments = 'Neon HUD · Instruments' }
+    if ($HoverEdges) { $expected.Remove('settings') }
+    elseif ($SettingsPage -eq 0) { $expected.instruments = 'Neon HUD · Instruments' }
     do {
         Start-Sleep -Milliseconds 200
         $process.Refresh()
@@ -134,7 +142,7 @@ try {
         if ($null -eq $window) { throw "Native $role window disappeared before capture" }
         $screenshot = Join-Path $OutputDirectory "native-$role.png"
         $width = 0; $height = 0; $colors = 0
-        $method = [NativeHudCapture]::Capture($window.Handle, $screenshot, [ref]$width, [ref]$height, [ref]$colors)
+        $method = [NativeHudCapture]::Capture($window.Handle, $screenshot, $true, [ref]$width, [ref]$height, [ref]$colors)
         if ($colors -lt 3) { throw "Native $role window screenshot has only $colors sampled colors" }
         $captures.Add([pscustomobject]@{
             role = $role
@@ -146,6 +154,49 @@ try {
             height = $height
             minimumDistinctColorsObserved = $colors
         })
+    }
+
+    $hoverChecks = @()
+    if ($HoverEdges) {
+        $hudWindow = $visible | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
+        $monitor = [NativeHudCapture+MONITORINFO]::new()
+        $monitor.Size = [Runtime.InteropServices.Marshal]::SizeOf($monitor)
+        if (-not [NativeHudCapture]::GetMonitorInfo([NativeHudCapture]::MonitorFromWindow($hudWindow.Handle, 2), [ref]$monitor)) { throw 'Hover monitor unavailable' }
+        $work = $monitor.Work
+        $hudWidth = $hudWindow.Rect.Right - $hudWindow.Rect.Left
+        $hudHeight = $hudWindow.Rect.Bottom - $hudWindow.Rect.Top
+        $xs = @{ left=$work.Left+20; center=[int](($work.Left+$work.Right-$hudWidth)/2); right=$work.Right-$hudWidth-20 }
+        $ys = @{ top=$work.Top+20; center=[int](($work.Top+$work.Bottom-$hudHeight)/2); bottom=$work.Bottom-$hudHeight-20 }
+        foreach ($edge in @('top','bottom','left','right','top-left','top-right','bottom-left','bottom-right')) {
+            $xKey = if ($edge.Contains('left')) { 'left' } elseif ($edge.Contains('right')) { 'right' } else { 'center' }
+            $yKey = if ($edge.Contains('top')) { 'top' } elseif ($edge.Contains('bottom')) { 'bottom' } else { 'center' }
+            if (-not [NativeHudCapture]::SetWindowPos($hudWindow.Handle, [IntPtr]::Zero, $xs[$xKey], $ys[$yKey], 0, 0, 0x15)) { throw 'Could not position CI HUD' }
+            if (-not [NativeHudCapture]::SetCursorPos($xs[$xKey]+40, $ys[$yKey]+25)) { throw 'Could not hover CI HUD' }
+            $hoverDeadline = (Get-Date).AddSeconds(2)
+            do {
+                Start-Sleep -Milliseconds 100
+                $windows = @([NativeHudCapture]::VisibleWindows([uint32]$process.Id))
+                $hud = $windows | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
+                $hover = $windows | Where-Object { $_.Title -eq 'Neon HUD reading' } | Select-Object -First 1
+                $valid = $null -ne $hud -and $null -ne $hover
+                if ($valid) {
+                    if ($xKey -eq 'left') { $valid = $valid -and $hover.Rect.Left -ge $hud.Rect.Right+4 }
+                    if ($xKey -eq 'right') { $valid = $valid -and $hover.Rect.Right -le $hud.Rect.Left-4 }
+                    if ($yKey -eq 'top') { $valid = $valid -and $hover.Rect.Top -ge $hud.Rect.Bottom+4 }
+                    if ($yKey -eq 'bottom') { $valid = $valid -and $hover.Rect.Bottom -le $hud.Rect.Top-4 }
+                    $valid = $valid -and $hover.Rect.Left -ge $work.Left -and $hover.Rect.Top -ge $work.Top -and $hover.Rect.Right -le $work.Right -and $hover.Rect.Bottom -le $work.Bottom
+                }
+            } while (-not $valid -and (Get-Date) -lt $hoverDeadline)
+            if (-not $valid) { throw "Hover did not open inward and remain visible at $edge" }
+            $screenshot = Join-Path $OutputDirectory "native-hover-$edge.png"
+            $width=0; $height=0; $colors=0
+            $method = [NativeHudCapture]::Capture($hover.Handle, $screenshot, $false, [ref]$width, [ref]$height, [ref]$colors)
+            if ($colors -lt 3) { throw "Hover $edge screenshot has only $colors sampled colors" }
+            $hoverChecks += [pscustomobject]@{
+                edge=$edge; screenshot=[IO.Path]::GetFileName($screenshot); captureMethod=$method
+                hud=$hud.Rect; hover=$hover.Rect; opensInward=$valid; minimumDistinctColorsObserved=$colors
+            }
+        }
     }
 
     $tree = [System.Collections.Generic.List[object]]::new()
@@ -162,7 +213,7 @@ try {
         }
     }
 
-    $exitDeadline = (Get-Date).AddSeconds(20)
+    $exitDeadline = (Get-Date).AddSeconds(35)
     do {
         Start-Sleep -Milliseconds 200
         $process.Refresh()
@@ -177,6 +228,7 @@ try {
         virtualDesktop = [ordered]@{ x = [NativeHudCapture]::GetSystemMetrics(76); y = [NativeHudCapture]::GetSystemMetrics(77); width = [NativeHudCapture]::GetSystemMetrics(78); height = [NativeHudCapture]::GetSystemMetrics(79) }
         visibleWindowsAtCapture = @($visible | ForEach-Object { [pscustomobject]@{ title = $_.Title; rectangle = [pscustomobject]@{ left = $_.Rect.Left; top = $_.Rect.Top; right = $_.Rect.Right; bottom = $_.Rect.Bottom } } })
         captures = @($captures)
+        hoverChecks = @($hoverChecks)
         processTreeAtCapture = @($tree)
         exitCode = $process.ExitCode
         strictSingleProcessProven = $false

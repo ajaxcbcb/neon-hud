@@ -30,6 +30,7 @@ fn main() -> eframe::Result<()> {
     }
     let args: Vec<String> = std::env::args().collect();
     let smoke = args.iter().any(|a| a == "--smoke");
+    let smoke_hover = smoke && args.iter().any(|a| a == "--smoke-hover");
     let smoke_page = args
         .iter()
         .find_map(|a| {
@@ -62,7 +63,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Neon HUD Native",
         options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, dir, smoke, minimized, smoke_page)))),
+        Box::new(move |cc| Ok(Box::new(App::new(cc, dir, smoke, minimized, smoke_page, smoke_hover)))),
     )
 }
 
@@ -94,10 +95,11 @@ struct App {
     preferences_tab: usize,
     drive_page: usize,
     selected: String,
-    hover: Option<(String, Pos2)>,
+    hover: Option<(String, Rect)>,
     drain: Drain,
     history: VecDeque<(f64, Option<f64>)>,
     smoke: bool,
+    smoke_hover: bool,
     started: Instant,
     quitting: bool,
     stopping: bool,
@@ -115,6 +117,7 @@ impl App {
         smoke: bool,
         minimized: bool,
         smoke_page: usize,
+        smoke_hover: bool,
     ) -> Self {
         let ctx = &cc.egui_ctx;
         ctx.set_embed_viewports(false);
@@ -156,8 +159,8 @@ impl App {
             tray,
             hidden,
             paused: false,
-            settings: smoke,
-            details: smoke && smoke_page == 0,
+            settings: smoke && !smoke_hover,
+            details: smoke && smoke_page == 0 && !smoke_hover,
             page: if smoke { smoke_page.min(2) } else { 0 },
             preferences_tab: usize::from(smoke && smoke_page == 3),
             drive_page: 0,
@@ -166,6 +169,7 @@ impl App {
             drain: Drain::default(),
             history: VecDeque::new(),
             smoke,
+            smoke_hover,
             started: Instant::now(),
             quitting: false,
             stopping: false,
@@ -588,15 +592,8 @@ impl App {
                     };
                     if response.hovered() {
                         ui.painter().rect_filled(cell.shrink(1.), 10, p.panel);
-                        self.hover = Some((
-                            key.to_string(),
-                            ctx.input(|i| {
-                                i.viewport()
-                                    .outer_rect
-                                    .map(|r| r.left_bottom())
-                                    .unwrap_or(Pos2::new(60., 120.))
-                            }),
-                        ));
+                        self.hover = ctx.input(|i| i.viewport().outer_rect)
+                            .map(|rect| (key.to_string(), rect));
                     }
                     paint::icon(ui.painter(), c, key, color, 15.);
                     if attention {
@@ -1565,20 +1562,36 @@ impl App {
         );
     }
     fn hover_window(&mut self, ctx: &egui::Context) {
-        let Some((key, pos)) = self.hover.clone() else {
+        let Some((key, hud)) = self.hover.clone() else {
             return;
         };
         if self.details || self.settings {
             return;
         }
+        let scale = desktop::coordinate_scale(ctx.pixels_per_point());
+        let Some(placement) = hover_placement(
+            [hud.min.x as f64 * scale, hud.min.y as f64 * scale,
+                hud.width() as f64 * scale, hud.height() as f64 * scale],
+            [248. * scale, 110. * scale],
+            8. * scale,
+            &self.screens,
+        ) else {
+            return;
+        };
         let (value, label, attention) = self.reading(&key);
         let p = self.palette();
         ctx.show_viewport_immediate(
             ViewportId::from_hash_of("hover"),
             ViewportBuilder::default()
                 .with_title("Neon HUD reading")
-                .with_inner_size([248., 110.])
-                .with_position([pos.x, pos.y + 8.])
+                .with_inner_size([
+                    (placement.size[0] / scale) as f32,
+                    (placement.size[1] / scale) as f32,
+                ])
+                .with_position([
+                    (placement.position[0] / scale) as f32,
+                    (placement.position[1] / scale) as f32,
+                ])
                 .with_resizable(false)
                 .with_decorations(false)
                 .with_taskbar(false)
@@ -1644,7 +1657,7 @@ impl eframe::App for App {
         self.settings_window(ctx);
         self.detail_window(ctx);
         self.hover_window(ctx);
-        if self.smoke && self.started.elapsed() > Duration::from_secs(12) {
+        if self.smoke && self.started.elapsed() > Duration::from_secs(if self.smoke_hover { 30 } else { 12 }) {
             self.quitting = true;
         }
         self.persist();

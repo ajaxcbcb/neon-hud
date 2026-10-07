@@ -11,6 +11,113 @@ pub struct Screen {
     pub primary: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct HoverPlacement {
+    pub position: [f64; 2],
+    pub size: [f64; 2],
+}
+
+/// All coordinates use the same desktop units (physical pixels on Windows).
+pub fn hover_placement(
+    hud: [f64; 4],
+    requested_size: [f64; 2],
+    gap: f64,
+    screens: &[Screen],
+) -> Option<HoverPlacement> {
+    if !hud.iter().chain(requested_size.iter()).all(|v| v.is_finite())
+        || !gap.is_finite()
+        || gap < 0.
+        || hud[2] <= 0.
+        || hud[3] <= 0.
+        || requested_size.iter().any(|v| *v <= 0.)
+    {
+        return None;
+    }
+    let center = [hud[0] + hud[2] / 2., hud[1] + hud[3] / 2.];
+    let overlap = |s: &Screen| {
+        ((hud[0] + hud[2]).min(s.origin[0] + s.size[0]) - hud[0].max(s.origin[0]))
+            .max(0.)
+            * ((hud[1] + hud[3]).min(s.origin[1] + s.size[1])
+                - hud[1].max(s.origin[1]))
+            .max(0.)
+    };
+    let distance = |s: &Screen| {
+        (center[0] - center[0].clamp(s.origin[0], s.origin[0] + s.size[0])).powi(2)
+            + (center[1] - center[1].clamp(s.origin[1], s.origin[1] + s.size[1]))
+                .powi(2)
+    };
+    let screen = screens
+        .iter()
+        .filter(|s| {
+            s.origin.iter().chain(s.size.iter()).all(|v| v.is_finite())
+                && s.size.iter().all(|v| *v > gap * 2.)
+        })
+        .max_by(|a, b| {
+            overlap(a)
+                .total_cmp(&overlap(b))
+                .then_with(|| distance(b).total_cmp(&distance(a)))
+        })?;
+    let size = [
+        requested_size[0].min(screen.size[0] - gap * 2.),
+        requested_size[1].min(screen.size[1] - gap * 2.),
+    ];
+    let left = hud[0] - screen.origin[0];
+    let right = screen.origin[0] + screen.size[0] - hud[0] - hud[2];
+    let top = hud[1] - screen.origin[1];
+    let bottom = screen.origin[1] + screen.size[1] - hud[1] - hud[3];
+    let x = if left < right {
+        hud[0] + hud[2] + gap
+    } else {
+        hud[0] - size[0] - gap
+    };
+    let y = if top < bottom {
+        hud[1] + hud[3] + gap
+    } else {
+        hud[1] - size[1] - gap
+    };
+    let near_horizontal = left.min(right) < size[0] + gap * 2.;
+    let near_vertical = top.min(bottom) < size[1] + gap * 2.;
+    let preferred = if near_horizontal && near_vertical {
+        [x, y]
+    } else if left.min(right) < top.min(bottom) {
+        [x, center[1] - size[1] / 2.]
+    } else {
+        [center[0] - size[0] / 2., y]
+    };
+    let clamp = |point: [f64; 2]| {
+        [
+            point[0].clamp(
+                screen.origin[0] + gap,
+                screen.origin[0] + screen.size[0] - gap - size[0],
+            ),
+            point[1].clamp(
+                screen.origin[1] + gap,
+                screen.origin[1] + screen.size[1] - gap - size[1],
+            ),
+        ]
+    };
+    let covers_hud = |point: [f64; 2]| {
+        point[0] < hud[0] + hud[2]
+            && point[0] + size[0] > hud[0]
+            && point[1] < hud[1] + hud[3]
+            && point[1] + size[1] > hud[1]
+    };
+    let position = [
+        preferred,
+        [center[0] - size[0] / 2., y],
+        [x, center[1] - size[1] / 2.],
+        [center[0] - size[0] / 2., hud[1] - size[1] - gap],
+        [center[0] - size[0] / 2., hud[1] + hud[3] + gap],
+        [hud[0] - size[0] - gap, center[1] - size[1] / 2.],
+        [hud[0] + hud[2] + gap, center[1] - size[1] / 2.],
+    ]
+    .into_iter()
+    .map(clamp)
+    .find(|point| !covers_hud(*point))
+    .unwrap_or_else(|| clamp(preferred));
+    Some(HoverPlacement { position, size })
+}
+
 pub fn restore_position(saved: &Value, screens: &[Screen], size: [f64; 2]) -> Option<[f64; 2]> {
     let screen = screens
         .iter()
@@ -218,6 +325,68 @@ impl Drain {
 mod tests {
     use super::*;
     use serde_json::json;
+    fn hover_screen(origin: [f64; 2], size: [f64; 2], scale: f64) -> Screen {
+        Screen {
+            id: "display:hover".into(),
+            name: "Hover monitor".into(),
+            origin,
+            size,
+            scale,
+            primary: true,
+        }
+    }
+    #[test]
+    fn hover_opens_inward_at_each_edge_and_corner() {
+        let screen = hover_screen([0., 0.], [1920., 1080.], 1.);
+        for (x, y) in [
+            (820., 0.), (820., 1024.), (0., 512.), (1640., 512.),
+            (0., 0.), (1640., 0.), (0., 1024.), (1640., 1024.),
+        ] {
+            let p = hover_placement([x, y, 280., 56.], [248., 110.], 8., std::slice::from_ref(&screen)).unwrap();
+            assert!(p.position[0] >= 8. && p.position[0] + p.size[0] <= 1912.);
+            assert!(p.position[1] >= 8. && p.position[1] + p.size[1] <= 1072.);
+            if x == 0. { assert!(p.position[0] >= x + 280. + 8.); }
+            if x == 1640. { assert!(p.position[0] + p.size[0] <= x - 8.); }
+            if y == 0. { assert!(p.position[1] >= y + 56. + 8.); }
+            if y == 1024. { assert!(p.position[1] + p.size[1] <= y - 8.); }
+        }
+    }
+    #[test]
+    fn hover_stays_on_huds_monitor_across_dpi_and_negative_origins() {
+        let screens = [
+            hover_screen([0., 0.], [1920., 1080.], 1.),
+            hover_screen([-3840., -200.], [3840., 2160.], 2.),
+        ];
+        for width in [160., 280.] {
+            let hud = [-width * 2., 1960. - 112., width * 2., 112.];
+            let p = hover_placement(hud, [496., 220.], 16., &screens).unwrap();
+            assert!(p.position[0] + p.size[0] <= hud[0] - 16.);
+            assert!(p.position[1] + p.size[1] <= hud[1] - 16.);
+            assert!(p.position[0] >= -3824. && p.position[1] >= -184.);
+        }
+        // A pill straddling two displays follows the monitor with greater overlap.
+        let p = hover_placement([-240., 500., 280., 56.], [248., 110.], 8., &screens).unwrap();
+        assert!(p.position[0] + p.size[0] <= -8.);
+    }
+    #[test]
+    fn hover_bounds_hold_after_movement_and_on_small_displays() {
+        let screen = hover_screen([100., -100.], [800., 600.], 1.);
+        for width in [160., 280.] {
+            for x in (100..=900).step_by(40) {
+                for y in (-100..=500).step_by(40) {
+                    let p = hover_placement([x as f64, y as f64, width, 56.], [248., 110.], 8., std::slice::from_ref(&screen)).unwrap();
+                    assert!(p.position[0] >= 108. && p.position[0] + p.size[0] <= 892.);
+                    assert!(p.position[1] >= -92. && p.position[1] + p.size[1] <= 492.);
+                }
+            }
+        }
+        let tiny = hover_screen([0., 0.], [200., 100.], 1.);
+        let p = hover_placement([0., 0., 160., 56.], [248., 110.], 8., &[tiny]).unwrap();
+        assert_eq!(p.size, [184., 84.]);
+        assert_eq!(p.position, [8., 8.]);
+        assert!(hover_placement([0., 0., 160., 56.], [248., 110.], 8., &[]).is_none());
+        assert!(hover_placement([f64::NAN, 0., 160., 56.], [248., 110.], 8., &[screen]).is_none());
+    }
     #[test]
     fn placement_tracks_negative_monitor_origins_and_dpi() {
         let screens = vec![
