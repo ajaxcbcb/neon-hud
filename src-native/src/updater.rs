@@ -226,10 +226,14 @@ pub fn launch_helper(stage: &VerifiedStage) -> Result<(), String> {
     let ticket = read_ticket(&stage.ticket)?;
     verify_ticket(&stage.ticket, &ticket)?;
     let helper = stage.ticket.parent().ok_or("Invalid stage")?.join(if cfg!(windows) { "update-helper.exe" } else { "update-helper" });
-    fs::copy(std::env::current_exe().map_err(|e| e.to_string())?, &helper).map_err(|e| format!("Helper copy failed: {e}"))?;
+    let mut from = File::open(std::env::current_exe().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let mut to = OpenOptions::new().write(true).create_new(true).open(&helper).map_err(|e| format!("Helper already exists or cannot be created: {e}"))?;
+    std::io::copy(&mut from, &mut to).map_err(|e| format!("Helper copy failed: {e}"))?;
+    to.sync_all().map_err(|e| e.to_string())?;
+    drop(to);
     #[cfg(unix)] {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).map_err(|e| format!("Helper is not executable: {e}"))?;
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).map_err(|e| format!("Helper is not executable: {e}"))?;
     }
     let mut cmd = ProcessCommand::new(helper);
     cmd.arg("--apply-update").arg(&stage.ticket).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -243,7 +247,56 @@ pub fn run_helper_cli() -> Option<Result<(), String>> {
     if args.next().as_deref() != Some(std::ffi::OsStr::new("--apply-update")) { return None; }
     let Some(path) = args.next() else { return Some(Err("Missing update ticket".into())); };
     if args.next().is_some() { return Some(Err("Unexpected helper arguments".into())); }
-    Some(apply(Path::new(&path)))
+    let path = Path::new(&path);
+    Some(match apply(path) {
+        Ok(()) => { clear_last_error(); Ok(()) }
+        Err(error) => {
+            save_last_error(&error);
+            let error = match restart_original_if_safe(path) {
+                Ok(true) => format!("{error}; previous app restarted"),
+                Ok(false) => error,
+                Err(restart) => format!("{error}; previous app restart failed: {restart}"),
+            };
+            save_last_error(&error);
+            Err(error)
+        }
+    })
+}
+fn last_error_path() -> Result<PathBuf, String> {
+    let profile = crate::desktop::profile_dir(false)?.canonicalize().map_err(|e| e.to_string())?;
+    Ok(stage_base(&profile)?.join("last-update-error.txt"))
+}
+fn save_last_error(error: &str) {
+    if let Ok(path) = last_error_path() {
+        let bounded: String = error.chars().take(2048).collect();
+        if let Ok(mut file) = File::create(path) { let _ = file.write_all(bounded.as_bytes()); let _ = file.sync_all(); }
+    }
+}
+fn clear_last_error() { if let Ok(path) = last_error_path() { let _ = fs::remove_file(path); } }
+fn relaunch_marker(ticket: &Path) -> Result<PathBuf, String> {
+    Ok(ticket.parent().ok_or("Invalid update stage")?.join("previous-app-relaunched"))
+}
+fn spawn_previous(executable: &Path, ticket: &Path) -> Result<(), String> {
+    let marker = relaunch_marker(ticket)?;
+    write_new(&marker, b"1")?;
+    if let Err(e) = ProcessCommand::new(executable).stdin(Stdio::null()).spawn() {
+        let _ = fs::remove_file(&marker);
+        return Err(format!("Previous app could not relaunch: {e}"));
+    }
+    Ok(())
+}
+fn restart_original_if_safe(path: &Path) -> Result<bool, String> {
+    let Ok(t) = read_ticket(path) else { return Ok(false); };
+    let own_profile = crate::desktop::profile_dir(false)?.canonicalize().map_err(|e| e.to_string())?;
+    if t.profile.canonicalize().ok().as_deref() != Some(own_profile.as_path()) { return Ok(false); }
+    if verify_ticket(path, &t).is_err() { return Ok(false); }
+    let helper = path.parent().ok_or("Invalid update stage")?.join(if cfg!(windows) { "update-helper.exe" } else { "update-helper" });
+    if std::env::current_exe().map_err(|e| e.to_string())?.canonicalize().map_err(|e| e.to_string())? != helper { return Ok(false); }
+    if relaunch_marker(path)?.exists() { return Ok(false); }
+    let lease = match acquire_instance(&own_profile) { Ok(file) => file, Err(_) => return Ok(false) };
+    drop(lease);
+    spawn_previous(&t.target, path)?;
+    Ok(true)
 }
 fn read_ticket(path: &Path) -> Result<Ticket, String> { serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?).map_err(|e| format!("Invalid update ticket: {e}")) }
 fn verify_ticket(path: &Path, t: &Ticket) -> Result<(), String> {
@@ -289,30 +342,32 @@ fn apply(path: &Path) -> Result<(), String> {
     let backup = unique_sibling(&target, "previous")?;
     copy_replacement(&source, &replacement, &t.platform)?;
     fs::rename(&target, &backup).map_err(|e| format!("Unable to back up installed app: {e}"))?;
-    if let Err(e) = fs::rename(&replacement, &target) { let _ = fs::rename(&backup, &target); return Err(format!("Unable to install native update: {e}")); }
+    if let Err(e) = fs::rename(&replacement, &target) {
+        fs::rename(&backup, &target).map_err(|restore| format!("Install failed: {e}; previous app restore failed: {restore}"))?;
+        return Err(format!("Unable to install native update; previous app restored: {e}"));
+    }
     let ack = dir.join("startup.ack");
     let _ = fs::remove_file(&ack);
     drop(lock);
     let mut child = match ProcessCommand::new(&t.target).arg("--update-ack").arg(path).stdin(Stdio::null()).spawn() {
         Ok(child) => child,
-        Err(e) => { rollback_and_relaunch(&target, &backup, &t.target)?; return Err(format!("Updated app could not launch; backup restored: {e}")); }
+        Err(e) => { rollback_and_relaunch(&target, &backup, &t.target, path)?; return Err(format!("Updated app could not launch; backup restored: {e}")); }
     };
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(35) {
         if ack.is_file() { return Ok(()); }
-        if child.try_wait().map_err(|e| e.to_string())?.is_some() { rollback_and_relaunch(&target, &backup, &t.target)?; return Err("Updated app exited before startup acknowledgement; backup restored".into()); }
+        if child.try_wait().map_err(|e| e.to_string())?.is_some() { rollback_and_relaunch(&target, &backup, &t.target, path)?; return Err("Updated app exited before startup acknowledgement; backup restored".into()); }
         thread::sleep(Duration::from_millis(250));
     }
     // The new process is still running. Never replace or kill its executable.
     Err("Updated app did not acknowledge startup; backup retained for manual recovery".into())
 }
-fn rollback_and_relaunch(target: &Path, backup: &Path, executable: &Path) -> Result<(), String> {
+fn rollback_and_relaunch(target: &Path, backup: &Path, executable: &Path, ticket: &Path) -> Result<(), String> {
     if target.parent() != backup.parent() || !backup.exists() { return Err("Rollback backup is invalid".into()); }
     let failed = unique_sibling(target, "failed")?;
     fs::rename(target, &failed).map_err(|e| format!("Rollback could not retain failed app: {e}"))?;
     fs::rename(backup, target).map_err(|e| format!("Rollback could not restore previous app: {e}"))?;
-    ProcessCommand::new(executable).stdin(Stdio::null()).spawn().map_err(|e| format!("Previous app restored but could not relaunch: {e}"))?;
-    Ok(())
+    spawn_previous(executable, ticket)
 }
 fn unique_sibling(target: &Path, label: &str) -> Result<PathBuf, String> {
     let parent = target.parent().ok_or("Installed app has no parent")?;

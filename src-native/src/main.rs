@@ -107,8 +107,16 @@ fn main() -> eframe::Result<()> {
 
 fn update_cli(args: &[String], profile: &std::path::Path) -> Option<Result<Value, String>> {
     let mode = args.get(1)?.as_str();
-    if !matches!(mode, "--update-check" | "--update-download" | "--update-install"
-        | "--verify-native-manifest" | "--verify-native-archive") { return None; }
+    if !matches!(
+        mode,
+        "--update-check"
+            | "--update-download"
+            | "--update-install"
+            | "--verify-native-manifest"
+            | "--verify-native-archive"
+    ) {
+        return None;
+    }
     Some((|| {
         if mode.starts_with("--verify-native-") {
             let manifest = std::fs::read(args.get(2).ok_or("Manifest path required")?)
@@ -117,17 +125,27 @@ fn update_cli(args: &[String], profile: &std::path::Path) -> Option<Result<Value
                 .map_err(|e| e.to_string())?;
             let version = updater::verify_manifest_bytes(&manifest, &signature)?;
             if mode == "--verify-native-archive" {
-                let platform = if cfg!(windows) { "windows-x86_64" }
-                    else if cfg!(target_arch="aarch64") { "macos-aarch64" }
-                    else { "macos-x86_64" };
-                updater::verify_archive_file(&manifest, &signature, platform,
-                    std::path::Path::new(args.get(4).ok_or("Archive path required")?))?;
+                let platform = if cfg!(windows) {
+                    "windows-x86_64"
+                } else if cfg!(target_arch = "aarch64") {
+                    "macos-aarch64"
+                } else {
+                    "macos-x86_64"
+                };
+                updater::verify_archive_file(
+                    &manifest,
+                    &signature,
+                    platform,
+                    std::path::Path::new(args.get(4).ok_or("Archive path required")?),
+                )?;
             }
             return Ok(json!({"verified":true,"version":version}));
         }
         let lease = if mode == "--update-install" {
             Some(updater::acquire_instance(profile)?)
-        } else { None };
+        } else {
+            None
+        };
         let current = env!("CARGO_PKG_VERSION");
         let Some(offer) = updater::check_now()? else {
             return Ok(json!({"status":"current","version":current}));
@@ -142,8 +160,10 @@ fn update_cli(args: &[String], profile: &std::path::Path) -> Option<Result<Value
             updater::launch_helper(&stage)?;
             drop(lease);
         }
-        Ok(json!({"status":if mode == "--update-install" {"restart_requested"} else {"verified"},
-            "installedVersion":current,"version":version,"signed":true}))
+        Ok(
+            json!({"status":if mode == "--update-install" {"restart_requested"} else {"verified"},
+            "installedVersion":current,"version":version,"signed":true}),
+        )
     })())
 }
 
@@ -212,7 +232,10 @@ struct UpdatePreferences {
 }
 impl Default for UpdatePreferences {
     fn default() -> Self {
-        Self { automatic_checks: true, automatic_downloads: true }
+        Self {
+            automatic_checks: true,
+            automatic_downloads: true,
+        }
     }
 }
 impl App {
@@ -242,13 +265,24 @@ impl App {
         let startup_enabled = desktop::startup()
             .and_then(|a| a.is_enabled().map_err(|e| e.to_string()))
             .unwrap_or(false);
+        let update_error = if !smoke && !std::env::args().any(|a| a == "--update-ack") {
+            std::fs::read(dir.join("native-updates/last-update-error.txt"))
+                .ok()
+                .filter(|bytes| bytes.len() <= 8192)
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+        } else {
+            None
+        };
         Self {
             worker: Worker::start(dir.clone(), ctx.clone()),
             update_worker: updater::Worker::start(dir.clone(), ctx.clone()),
             update_preferences: std::fs::read(dir.join("updater-settings.json"))
-                .ok().and_then(|v| serde_json::from_slice(&v).ok()).unwrap_or_default(),
+                .ok()
+                .and_then(|v| serde_json::from_slice(&v).ok())
+                .unwrap_or_default(),
             profile_dir: dir,
-            update_status: "Ready to check for updates".into(),
+            update_status: update_error.as_ref().map(|error| format!("Previous update failed: {error}"))
+                .unwrap_or_else(|| "Ready to check for updates".into()),
             update_offer: None,
             update_stage: None,
             update_busy: false,
@@ -276,10 +310,10 @@ impl App {
             tray,
             hidden,
             paused: false,
-            settings: smoke && !smoke_interaction,
+            settings: (smoke && !smoke_interaction) || update_error.is_some(),
             details: smoke && smoke_page == 0 && !smoke_interaction,
-            page: if smoke { smoke_page.min(2) } else { 0 },
-            preferences_tab: usize::from(smoke && smoke_page == 3),
+            page: if update_error.is_some() { 2 } else if smoke { smoke_page.min(2) } else { 0 },
+            preferences_tab: usize::from(update_error.is_some() || (smoke && smoke_page == 3)),
             drive_page: 0,
             selected: "cpu".into(),
             hover: None,
@@ -477,7 +511,9 @@ impl App {
                 }
                 Event::Stopped => {
                     if self.applying_update {
-                        let result = self.update_stage.as_ref()
+                        let result = self
+                            .update_stage
+                            .as_ref()
                             .ok_or_else(|| "Verified update is missing".to_string())
                             .and_then(updater::launch_helper);
                         if let Err(error) = result {
@@ -1400,10 +1436,18 @@ impl App {
         ui.label("Closing the HUD hides it in the tray. Quit exits it.");
         ui.separator();
         ui.heading("Updates");
-        let mut changed = ui.checkbox(&mut self.update_preferences.automatic_checks,
-            "Check automatically").changed();
-        changed |= ui.checkbox(&mut self.update_preferences.automatic_downloads,
-            "Download automatically · when pressure is low").changed();
+        let mut changed = ui
+            .checkbox(
+                &mut self.update_preferences.automatic_checks,
+                "Check automatically",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.update_preferences.automatic_downloads,
+                "Download automatically · when pressure is low",
+            )
+            .changed();
         if changed {
             let result = serde_json::to_vec_pretty(&self.update_preferences)
                 .map_err(|e| e.to_string())
@@ -1420,17 +1464,32 @@ impl App {
         ui.add(egui::Label::new(egui::RichText::new(&self.update_status).small()).truncate())
             .on_hover_text(&self.update_status);
         if let Some((done, total)) = self.update_progress {
-            ui.add(egui::ProgressBar::new(done as f32 / total.max(1) as f32)
-                .text(format!("{} / {}", bytes(done as f64), bytes(total as f64))));
+            ui.add(
+                egui::ProgressBar::new(done as f32 / total.max(1) as f32).text(format!(
+                    "{} / {}",
+                    bytes(done as f64),
+                    bytes(total as f64)
+                )),
+            );
         }
         ui.horizontal(|ui| {
-            if ui.add_enabled(!self.update_busy && !self.quitting,
-                egui::Button::new("Check now")).clicked() {
+            if ui
+                .add_enabled(
+                    !self.update_busy && !self.quitting,
+                    egui::Button::new("Check now"),
+                )
+                .clicked()
+            {
                 self.check_updates();
             }
             if self.update_stage.is_some() {
-                if ui.add_enabled(!self.update_busy && self.writable && !self.quitting,
-                    egui::Button::new("Restart and update")).clicked() {
+                if ui
+                    .add_enabled(
+                        !self.update_busy && self.writable && !self.quitting,
+                        egui::Button::new("Restart and update"),
+                    )
+                    .clicked()
+                {
                     self.applying_update = true;
                     self.quitting = true;
                     self.update_status = "Saving your settings before restarting…".into();
@@ -1443,13 +1502,18 @@ impl App {
         });
         ui.add_space(6.);
         ui.label(
-            egui::RichText::new(format!("{} · native-preview · signed updates\nApache 2.0 + MIT", env!("CARGO_PKG_VERSION")))
-                .small()
-                .color(self.palette().dim),
+            egui::RichText::new(format!(
+                "{} · native-preview · signed updates\nApache 2.0 + MIT",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .small()
+            .color(self.palette().dim),
         );
     }
     fn check_updates(&mut self) {
-        if self.update_busy { return; }
+        if self.update_busy {
+            return;
+        }
         if self.update_worker.tx.send(updater::Command::Check).is_ok() {
             self.update_busy = true;
             self.update_progress = None;
@@ -1460,9 +1524,16 @@ impl App {
         }
     }
     fn download_update(&mut self) {
-        if self.update_busy { return; }
+        if self.update_busy {
+            return;
+        }
         if let Some(offer) = self.update_offer.clone() {
-            if self.update_worker.tx.send(updater::Command::Download(offer)).is_ok() {
+            if self
+                .update_worker
+                .tx
+                .send(updater::Command::Download(offer))
+                .is_ok()
+            {
                 self.update_busy = true;
                 self.update_status = "Downloading signed update…".into();
             }
@@ -1485,7 +1556,8 @@ impl App {
                     self.update_busy = false;
                     self.update_offer = None;
                     self.update_stage = None;
-                    self.update_status = format!("You're up to date · {}", env!("CARGO_PKG_VERSION"));
+                    self.update_status =
+                        format!("You're up to date · {}", env!("CARGO_PKG_VERSION"));
                 }
                 updater::Event::Ready(stage) => {
                     self.update_busy = false;
@@ -1502,14 +1574,23 @@ impl App {
                 }
             }
         }
-        if self.smoke || self.quitting || !self.loaded { return; }
-        if self.update_preferences.automatic_checks && self.mode == Mode::Normal
+        if self.smoke || self.quitting || !self.loaded {
+            return;
+        }
+        if self.update_preferences.automatic_checks
+            && self.mode == Mode::Normal
             && self.started.elapsed() > Duration::from_secs(5)
-            && self.last_update.elapsed() >= Duration::from_secs(6 * 3600) {
+            && self.last_update.elapsed() >= Duration::from_secs(6 * 3600)
+        {
             self.check_updates();
         }
-        if self.update_preferences.automatic_checks && self.update_preferences.automatic_downloads && self.mode == Mode::Normal
-            && self.update_offer.is_some() && self.update_stage.is_none() && !self.update_busy {
+        if self.update_preferences.automatic_checks
+            && self.update_preferences.automatic_downloads
+            && self.mode == Mode::Normal
+            && self.update_offer.is_some()
+            && self.update_stage.is_none()
+            && !self.update_busy
+        {
             self.download_update();
         }
     }
