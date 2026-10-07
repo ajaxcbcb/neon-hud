@@ -7,7 +7,7 @@ use std::{
     fs,
     sync::atomic::{AtomicU64, Ordering},
     sync::mpsc::{self, Sender, SyncSender},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use sysinfo::{
@@ -126,6 +126,8 @@ struct Settings {
     #[serde(default)]
     resources: Resources,
     codex_enabled: bool,
+    #[serde(default = "default_true")]
+    auto_updates: bool,
 }
 fn default_motion() -> String {
     "chaotic".into()
@@ -179,7 +181,7 @@ impl Default for Settings {
             theme: "circuit".into(),
             motion: default_motion(),
             size: "compact".into(),
-            corner: "bottom-right".into(),
+            corner: "middle-right".into(),
             monitor: 0,
             always_on_top: true,
             opacity: 1.0,
@@ -201,6 +203,7 @@ impl Default for Settings {
             performance: Performance::default(),
             resources: Resources::default(),
             codex_enabled: false,
+            auto_updates: true,
         }
     }
 }
@@ -250,6 +253,18 @@ fn normalize_settings(settings: &mut Settings) {
     if !["compact", "expanded"].contains(&settings.size.as_str()) {
         settings.size = "compact".into();
     }
+    if ![
+        "top-left",
+        "top-right",
+        "middle-left",
+        "middle-right",
+        "bottom-left",
+        "bottom-right",
+    ]
+    .contains(&settings.corner.as_str())
+    {
+        settings.corner = "middle-right".into();
+    }
     settings
         .storage_drive_ids
         .retain(|id| !id.trim().is_empty() && id.len() <= 1024);
@@ -274,6 +289,17 @@ fn normalize_settings(settings: &mut Settings) {
 #[cfg(test)]
 mod settings_tests {
     use super::*;
+    #[test]
+    fn corner_defaults_and_normalizes_to_supported_positions() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.corner, "middle-right");
+        settings.corner = "middle-left".into();
+        normalize_settings(&mut settings);
+        assert_eq!(settings.corner, "middle-left");
+        settings.corner = "off-screen".into();
+        normalize_settings(&mut settings);
+        assert_eq!(settings.corner, "middle-right");
+    }
     #[test]
     fn older_settings_get_storage_and_performance_defaults() {
         let mut old = serde_json::to_value(Settings::default()).unwrap();
@@ -655,57 +681,96 @@ pub struct Attention {
     session_id: String,
 }
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProviderSnapshot {
     usages: Vec<Usage>,
     attention: Vec<Attention>,
+    claude_bridge_enabled: bool,
 }
 #[tauri::command]
-fn provider_snapshot(
+async fn provider_snapshot(
     app: AppHandle,
-    codex: tauri::State<'_, Mutex<codex::CodexState>>,
-) -> ProviderSnapshot {
-    let mut usages = vec![Usage::unavailable(
-        "chatgpt",
-        "No supported API",
-        "ChatGPT chat allowance is unavailable through a supported local source.",
-    )];
-    usages.push(
-        codex.lock().map(|mut c| c.usage()).unwrap_or_else(|_| {
+    codex: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
+) -> Result<ProviderSnapshot, String> {
+    let codex = Arc::clone(codex.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut usages = vec![Usage::unavailable(
+            "chatgpt",
+            "No supported API",
+            "ChatGPT chat allowance is unavailable through a supported local source.",
+        )];
+        usages.push(codex.lock().map(|mut c| c.usage()).unwrap_or_else(|_| {
             Usage::unavailable("codex", "Codex app-server", "Reader unavailable")
-        }),
-    );
-    let (claude, attention) = bridge::read_provider(&app);
-    usages.push(claude.clone());
-    usages.push(Usage {
-        surface: "claude-code".into(),
-        message: "Shares the Claude account allowance; no separate total is added.".into(),
-        ..claude
-    });
-    ProviderSnapshot { usages, attention }
+        }));
+        let (claude, attention) = bridge::read_provider(&app);
+        usages.push(claude.clone());
+        usages.push(Usage {
+            surface: "claude-code".into(),
+            message: "Shares the Claude account allowance; no separate total is added.".into(),
+            ..claude
+        });
+        ProviderSnapshot {
+            usages,
+            attention,
+            claude_bridge_enabled: bridge::is_enabled(&app),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 #[tauri::command]
-fn connect_codex(
+async fn connect_codex(
     app: AppHandle,
-    state: tauri::State<'_, Mutex<codex::CodexState>>,
+    state: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
     login: Option<bool>,
 ) -> Result<String, String> {
-    state
-        .lock()
+    let state = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        state
+            .lock()
+            .map_err(|e| e.to_string())?
+            .connect(&app, login.unwrap_or(true))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn disconnect_codex(
+    state: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
+) -> Result<(), String> {
+    let state = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        state.lock().map_err(|e| e.to_string())?.disconnect();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn install_claude_bridge(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || bridge::install(&app))
+        .await
         .map_err(|e| e.to_string())?
-        .connect(&app, login.unwrap_or(true))
 }
 #[tauri::command]
-fn disconnect_codex(state: tauri::State<'_, Mutex<codex::CodexState>>) -> Result<(), String> {
-    state.lock().map_err(|e| e.to_string())?.disconnect();
-    Ok(())
+async fn remove_claude_bridge(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || bridge::remove(&app))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn install_claude_bridge(app: AppHandle) -> Result<String, String> {
-    bridge::install(&app)
-}
-#[tauri::command]
-fn remove_claude_bridge(app: AppHandle) -> Result<String, String> {
-    bridge::remove(&app)
+async fn restart_app(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
+) -> Result<(), String> {
+    let state = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        state.lock().map_err(|e| e.to_string())?.disconnect();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    app.restart()
 }
 #[tauri::command]
 fn set_preferences(
@@ -772,8 +837,9 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SystemMonitor::new())
-        .manage(Mutex::new(codex::CodexState::default()))
+        .manage(Arc::new(Mutex::new(codex::CodexState::default())))
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Show HUD", true, None::<&str>)?;
             let config = MenuItem::with_id(app, "configure", "Configure", true, None::<&str>)?;
@@ -789,7 +855,7 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
-                        if let Some(state) = app.try_state::<Mutex<codex::CodexState>>() {
+                        if let Some(state) = app.try_state::<Arc<Mutex<codex::CodexState>>>() {
                             if let Ok(mut codex) = state.lock() {
                                 codex.disconnect();
                             }
@@ -830,6 +896,7 @@ pub fn run() {
             disconnect_codex,
             install_claude_bridge,
             remove_claude_bridge,
+            restart_app,
             open_link,
             dismiss_attention
         ])

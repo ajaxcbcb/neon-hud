@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.1.1] - 2026-10-07
+
+### Highlights
+
+- A 280 × 56 side pill with a 272 × 48 neon capsule, readable numbers and metric/provider icons.
+- Hover measurements, click-through meters, keyboard/right-click quick controls, and six display positions.
+- Immediate connection progress and honest connected, waiting, sign-in-needed and failed states.
+- Automatic GitHub version checks and signed downloads, with explicit Install & restart control.
+
+### Reliability
+
+- Asynchronous provider and bridge commands keep the interface responsive.
+- Bridge status checks the actual statusline and all seven hooks; cached readings cannot imply configuration.
+- Serialized refreshes isolate a previous failed request from the next connection action.
+- Window resizing is queued, with DPI-aware placement and narrow settings support.
+- Idle pill animations stop; hover and question reactions remain brief, with reduced motion and adaptive budgets.
+- Fork pull requests build without release secrets; trusted CI produces signed update packages.
+
+### Limits
+
+- Rust handles native monitoring, tray and startup; the interface still uses Tauri's desktop WebView.
+- OS code signing/notarization, native Mac runtime and full-process performance measurements remain pending.
+- Configuring Claude does not prove a live quota reading; it waits for supported Claude Code statusline data.
+
 ## [0.1.0] - 2026-10-07
 
 First public preview.
@@ -46,3 +70,4 @@ First public preview.
 - Live provider integration and full-process performance targets have not been measured.
 
 [0.1.0]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0
+[0.1.1]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.1

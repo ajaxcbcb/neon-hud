@@ -2,15 +2,17 @@
 
 A small desktop cockpit for CPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
 
-[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.0.md)
+[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.1.md)
 
-![Appearance setup with clearly labeled sample readings](docs/assets/appearance.png)
+![Tiny pill HUD showing sample readings](docs/assets/pill.png)
+
+Sample readings above. The floating window is 280 × 56 pixels at default scale; the visible capsule is 272 × 48.
 
 ## Install and first launch
 
-Get preview installers from [GitHub Releases](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0). Packages are built by [GitHub Actions](https://github.com/ajaxcbcb/neon-hud/actions). Windows: download the x64 NSIS setup executable and follow the installer. Mac: open the universal DMG and drag Neon HUD to Applications. Preview builds are unsigned; signed production distribution requires platform certificates and Mac notarization.
+Get preview installers from [GitHub Releases](https://github.com/ajaxcbcb/neon-hud/releases). Packages are built by [GitHub Actions](https://github.com/ajaxcbcb/neon-hud/actions). Windows: download the x64 NSIS setup executable and follow the installer. Mac: open the universal DMG and drag Neon HUD to Applications. Preview installers are not OS code-signed or notarized. Application update packages have a separate cryptographic signature verified by Neon HUD.
 
-The first page after installation is **Appearance**: choose Neon Circuit, Cyberpunk Night or Aurora, choose Chaotic, Playful or Quiet motion, then size. The default floating HUD is 360 by 240 pixels with storage, or 360 by 210 with storage hidden; placement and readability controls are tucked into an expandable section. A clearly marked sample HUD previews your choices. Next connect optional AI sources, then choose metrics and alerts. System monitoring works without an AI connection.
+The first page after installation is **Appearance**: choose Neon Circuit, Cyberpunk Night or Aurora, choose Chaotic, Playful or Quiet motion, then size. The default is a 280 × 56 floating pill on the right side, with six placement choices and optional text scaling. Hover reveals measurements; click opens the larger meters and graphs. A clearly marked sample HUD previews your choices. Next connect optional AI sources, then choose metrics and alerts. System monitoring works without an AI connection. Existing users can select **Appearance → Pill** to switch from an expanded layout.
 
 Hover or focus any metric for numerical details and pressure explanations. Right-click the HUD (or press Shift+F10) for expand, pause/resume, pin, theme, motion, refresh, settings and hide controls. Open the gear or tray/menu-bar **Configure** item to change settings later. **Preferences → Launch Neon HUD at login** enables Windows startup or a macOS login agent; switching it off removes that registration. It defaults to off. Closing the HUD hides it to the tray; use **Quit** to exit.
 
@@ -30,7 +32,7 @@ Exact cumulative token counts are unavailable from the connected quota sources. 
 
 **Codex:** install the official Codex CLI and select Connect Codex. Neon HUD uses its supported local app-server and provider-managed sign-in. It reads Codex account allowance; this does **not** describe ordinary ChatGPT chat quotas. An automatic supported ChatGPT chat allowance source is unavailable in this version. Existing Codex desktop conversations are not observed for questions.
 
-**Claude:** install Claude Code, then select Enable bridge. A local statusline receives supported account-limit readings after an assistant response. Claude and Claude Code share these limits when using the same account; the HUD does not add the two together. The bridge also observes explicit questions and permission requests. The icon shakes briefly, then retains a question badge until resolved or dismissed. Reduced-motion preferences replace the shake with a static badge.
+**Claude:** install Claude Code, sign in with `claude auth login`, then select Enable bridge. The button shows progress immediately and confirms the installed statusline and seven hooks. **Waiting for readings** means configuration succeeded but no supported account-limit reading has arrived. Start or resume Claude Code and use it normally; the local statusline receives supported account-limit readings when Claude Code supplies them. Claude and Claude Code share these limits when using the same account; the HUD does not add the two together. The bridge also observes explicit questions and permission requests. The icon shakes briefly, then retains a question badge until resolved or dismissed. Reduced-motion preferences replace the shake with a static badge.
 
 The Claude bridge backs up settings, preserves other hooks and chains an existing statusline. **Remove bridge before uninstalling Neon HUD**, so Claude settings do not reference a removed executable. Removal changes only the HUD's configuration; your unrelated settings stay in place. No automatic approvals are issued.
 
@@ -50,6 +52,12 @@ Critical mode starts after sustained ≥98% CPU or ≥97% memory (subject to hig
 
 Performance targets are under 1% idle CPU and a small full-process memory footprint. These are targets until measured on each platform, including WebView and provider helper processes. See [validation](docs/VALIDATION.md) for evidence and limitations.
 
+## Application updates
+
+From 0.1.1, Preferences enables automatic update checks at startup and every six hours, including while hidden in the tray. Automatic checks defer during high resource pressure. Available packages download in the background and must pass signature verification before **Install & restart** becomes available. Installation and restart require that button; downloads never trigger an unattended restart. Progress, failures, retry controls and the installed version are visible in Preferences. Disable automatic checks there if desired.
+
+Updates use the public [`updates/latest.json`](updates/latest.json) manifest and versioned GitHub Release assets. The first 0.1.0 installation must be upgraded with the installer. See [release maintenance](docs/releases/MAINTENANCE.md) for the signed publishing gate.
+
 ## Develop
 
 Install Node.js 24, Rust stable and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
@@ -63,8 +71,8 @@ npm run tauri dev
 
 Browser-only preview: `npm run dev`. It displays sample data only on the appearance page; real system and account sources require the native app.
 
-Windows installer: `npm run tauri build -- --bundles nsis`.
-Mac universal installer: add Rust targets `aarch64-apple-darwin` and `x86_64-apple-darwin`, then `npm run tauri build -- --target universal-apple-darwin --bundles dmg`.
+Unsigned developer Windows installer: `npm run tauri build -- --bundles nsis --config src-tauri/tauri.pr.conf.json`.
+Unsigned developer Mac universal installer: add Rust targets `aarch64-apple-darwin` and `x86_64-apple-darwin`, then `npm run tauri build -- --target universal-apple-darwin --bundles dmg --config src-tauri/tauri.pr.conf.json`. Trusted CI builds require the repository's update signing secret; fork pull requests use the unsigned developer configuration.
 
 ## License
 

@@ -50,7 +50,15 @@ jobs:
       - run: npm ci
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-      - run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+      - name: Build unsigned pull request preview
+        if: github.event_name == 'pull_request'
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }} --config src-tauri/tauri.pr.conf.json
+      - name: Build signed update packages
+        if: github.event_name != 'pull_request'
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
       - name: Verify Windows application launch
         if: runner.os == 'Windows'
         shell: pwsh
@@ -61,5 +69,8 @@ jobs:
           path: |
             src-tauri/target/**/bundle/nsis/*.exe
             src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/nsis/*.exe.sig
+            src-tauri/target/**/bundle/macos/*.app.tar.gz
+            src-tauri/target/**/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 14

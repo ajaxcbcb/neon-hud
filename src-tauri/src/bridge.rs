@@ -16,6 +16,15 @@ use tauri::{AppHandle, Manager};
 
 const MAX_INPUT: u64 = 1024 * 1024;
 const OWN: &str = "--bridge";
+const BRIDGE_EVENTS: [&str; 7] = [
+    "Notification",
+    "PermissionRequest",
+    "PreToolUse",
+    "UserPromptSubmit",
+    "PostToolUse",
+    "Stop",
+    "SessionEnd",
+];
 fn home() -> Result<PathBuf, String> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
@@ -322,16 +331,7 @@ fn is_ours(command: &str, owners: &[PathBuf]) -> bool {
         ["--bridge", "statusline", "--previous", hex] => {
             !hex.is_empty() && hex.len() % 2 == 0 && hex.bytes().all(|b| b.is_ascii_hexdigit())
         }
-        ["--bridge", "hook", event] => [
-            "Notification",
-            "PermissionRequest",
-            "PreToolUse",
-            "UserPromptSubmit",
-            "PostToolUse",
-            "Stop",
-            "SessionEnd",
-        ]
-        .contains(event),
+        ["--bridge", "hook", event] => BRIDGE_EVENTS.contains(event),
         _ => false,
     }
 }
@@ -341,6 +341,47 @@ fn owns_status_line(settings: &Value, owners: &[PathBuf]) -> bool {
         .and_then(|v| v.get("command"))
         .and_then(Value::as_str)
         .is_some_and(|command| is_ours(command, owners))
+}
+fn settings_bridge_enabled(settings: &Value, owner: &Path) -> bool {
+    let status_owned = settings
+        .get("statusLine")
+        .and_then(|status| status.get("command"))
+        .and_then(Value::as_str)
+        .and_then(statusline_command_parts)
+        .is_some_and(|(path, _)| same_executable(&path, owner));
+    if !status_owned {
+        return false;
+    }
+    BRIDGE_EVENTS.iter().all(|event| {
+        let Ok(command) = executable_command_for(owner, &format!("hook {event}"), None) else {
+            return false;
+        };
+        settings
+            .get("hooks")
+            .and_then(|hooks| hooks.get(*event))
+            .and_then(Value::as_array)
+            .is_some_and(|groups| {
+                groups.iter().any(|group| {
+                    group
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|hooks| {
+                            hooks.iter().any(|hook| {
+                                hook.get("command").and_then(Value::as_str)
+                                    == Some(command.as_str())
+                            })
+                        })
+                })
+            })
+    })
+}
+pub fn is_enabled(_app: &AppHandle) -> bool {
+    let Ok(owner) = std::env::current_exe() else {
+        return false;
+    };
+    settings_path()
+        .and_then(|path| read_settings(&path))
+        .is_ok_and(|settings| settings_bridge_enabled(&settings, &owner))
 }
 fn restore_status_line(settings: &mut Value, manifest: &Value, owners: &[PathBuf]) {
     if !owns_status_line(settings, owners) {
@@ -485,16 +526,7 @@ pub fn install(app: &AppHandle) -> Result<String, String> {
         })
     });
     let status = executable_command("statusline", previous.as_deref())?;
-    let events = [
-        "Notification",
-        "PermissionRequest",
-        "PreToolUse",
-        "UserPromptSubmit",
-        "PostToolUse",
-        "Stop",
-        "SessionEnd",
-    ];
-    let commands: Vec<_> = events
+    let commands: Vec<_> = BRIDGE_EVENTS
         .iter()
         .map(|e| {
             Ok((
@@ -853,6 +885,32 @@ mod tests {
     fn malformed_settings_rejected() {
         assert!(merge(json!([]), "own", &[]).is_err());
         assert!(merge(json!({"hooks":[]}), "own", &[]).is_err());
+    }
+    #[test]
+    fn bridge_status_requires_current_executable_and_all_hooks() {
+        let own = PathBuf::from("/install/one/neon-hud");
+        let foreign = PathBuf::from("/install/two/neon-hud");
+        let status = executable_command_for(&own, "statusline", None).unwrap();
+        let hooks: Vec<_> = BRIDGE_EVENTS
+            .iter()
+            .map(|event| {
+                (
+                    (*event).to_owned(),
+                    executable_command_for(&own, &format!("hook {event}"), None).unwrap(),
+                )
+            })
+            .collect();
+        let installed = merge(json!({}), &status, &hooks).unwrap();
+        assert!(settings_bridge_enabled(&installed, &own));
+        assert!(!settings_bridge_enabled(&installed, &foreign));
+        let mut wrong_status = installed.clone();
+        wrong_status["statusLine"]["command"] = json!(hooks[0].1.clone());
+        assert!(!settings_bridge_enabled(&wrong_status, &own));
+        let mut missing_hook = installed.clone();
+        missing_hook["hooks"]["Stop"] = json!([]);
+        assert!(!settings_bridge_enabled(&missing_hook, &own));
+        let removed = strip(installed, &[own.clone()]);
+        assert!(!settings_bridge_enabled(&removed, &own));
     }
     #[test]
     fn manifest_restores_foreign_status_without_touching_other_settings() {

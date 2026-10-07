@@ -2,6 +2,27 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Local HUD window capabilities",
-  "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-size", "core:window:allow-set-min-size", "core:window:allow-set-resizable", "core:window:allow-center", "core:window:allow-outer-size", "core:window:allow-outer-position", "core:window:allow-set-always-on-top", "core:window:allow-set-position", "core:window:allow-hide", "core:window:allow-show", "core:window:allow-set-focus", "core:window:allow-available-monitors", "core:window:allow-current-monitor", "opener:default", "notification:default"]
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-size",
+    "core:window:allow-set-skip-taskbar",
+    "core:window:allow-set-min-size",
+    "core:window:allow-set-resizable",
+    "core:window:allow-center",
+    "core:window:allow-outer-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-position",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-available-monitors",
+    "core:window:allow-current-monitor",
+    "opener:default",
+    "notification:default",
+    "updater:default"
+  ]
 }

@@ -91,7 +91,7 @@ impl CodexState {
         self.child = Some(child);
         self.input = Some(input);
         self.lines = Some(rx);
-        self.send(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"clientInfo":{"name":"neon_hud","title":"Neon HUD","version":"0.1.0"}}}))?;
+        self.send(json!({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"clientInfo":{"name":"neon_hud","title":"Neon HUD","version":env!("CARGO_PKG_VERSION")}}}))?;
         self.response(0, Duration::from_secs(8))?;
         self.send(json!({"jsonrpc":"2.0","method":"initialized"}))?;
         Ok(())

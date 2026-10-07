@@ -3,6 +3,9 @@
   import { onMount } from 'svelte';
 
   import { invoke } from '@tauri-apps/api/core';
+  import { getVersion } from '@tauri-apps/api/app';
+  import { check as checkUpdate } from '@tauri-apps/plugin-updater';
+  import { UpdateController, type UpdateStatus } from './lib/updates';
 
   import { listen } from '@tauri-apps/api/event';
 
@@ -11,6 +14,10 @@
   import { LogicalSize, PhysicalPosition } from '@tauri-apps/api/dpi';
 
   import Hud from './components/Hud.svelte';
+  import Pill from './components/Pill.svelte';
+  import { windowSize, dockPosition, PILL_HEIGHT } from './lib/layout';
+  import { idleAttempt, runConnection, connectionView } from './lib/connections';
+  import { createRefreshQueue } from './lib/refresh';
 
   import Icon from './components/Icon.svelte';
 
@@ -27,6 +34,22 @@
   let settings: Settings = structuredClone(defaults);
 
   let loaded = false;
+  let appVersion = '0.1.1';
+  let updateStatus: UpdateStatus = { phase: native ? 'idle' : 'preview', message: native ? 'Updates are checked automatically.' : 'Updates are available in the installed app.' };
+  const updater = new UpdateController(() => checkUpdate({ timeout: 10000 }), value => updateStatus = value);
+  let lastUpdateCheck = 0;
+  async function checkUpdates(automatic = false) {
+    if (!native || (automatic && (!settings.autoUpdates || resources.mode !== 'normal'))) return;
+    lastUpdateCheck = Date.now();
+    await updater.check(automatic);
+  }
+  async function installUpdate() {
+    await updater.install();
+    if (updateStatus.phase === 'restart') {
+      try { await invoke('restart_app'); }
+      catch { notice = 'Update installed. Quit and reopen Neon HUD to load it.'; }
+    }
+  }
 
   let configure = true;
 
@@ -44,6 +67,12 @@
   let paused = false;
   let systemBusy = false;
   let providerBusy = false;
+  const queuedProviderRead = createRefreshQueue(readProviders);
+  let codexAttempt = idleAttempt();
+  let bridgeAttempt = idleAttempt();
+  $: connecting = codexAttempt.phase === 'pending' || bridgeAttempt.phase === 'pending';
+  let pillHeight = PILL_HEIGHT;
+  let windowQueue: Promise<void> = Promise.resolve();
   let lastSystemPoll = 0;
   let lastProviderPoll = 0;
   const governor = new ResourceGovernor();
@@ -83,19 +112,18 @@
   }
 
   async function applyWindow() {
-
     if (!native) return;
-
+    windowQueue = windowQueue.catch(() => {}).then(resizeWindow);
+    return windowQueue;
+  }
+  async function resizeWindow() {
     const win = getCurrentWindow();
-
+    const dimensions = windowSize(settings, configure, !!providerDetail, pillHeight);
     await win.setAlwaysOnTop(configure ? false : settings.alwaysOnTop);
-
+    await win.setSkipTaskbar(!configure);
     await win.setResizable(configure);
-
-    await win.setMinSize(new LogicalSize(configure ? 430 : 300, configure ? 540 : 200));
-
-    await win.setSize(new LogicalSize(configure ? 760 : (settings.size === 'compact' ? 360 : 680) * settings.textScale, configure ? 680 : (settings.size === 'compact' ? (settings.metrics.storage ? 240 : 210) : 500) * settings.textScale));
-
+    await win.setMinSize(new LogicalSize(dimensions.minWidth, dimensions.minHeight));
+    await win.setSize(new LogicalSize(dimensions.width, dimensions.height));
     if (configure) { await win.center(); return; }
 
     const displays = await availableMonitors();
@@ -108,15 +136,10 @@
 
     const size = await win.outerSize();
 
-    const padding = Math.round(20 * monitor.scaleFactor);
-
-    const x = settings.corner.endsWith('right') ? area.position.x + area.size.width - size.width - padding : area.position.x + padding;
-
-    const y = settings.corner.startsWith('bottom') ? area.position.y + area.size.height - size.height - padding : area.position.y + padding;
-
-    await win.setPosition(new PhysicalPosition(Math.max(area.position.x, x), Math.max(area.position.y, y)));
-
+    const position = dockPosition(settings.corner, { x: area.position.x, y: area.position.y, width: area.size.width, height: area.size.height }, size, monitor.scaleFactor, settings.size === 'compact' && !providerDetail, settings.textScale);
+    await win.setPosition(new PhysicalPosition(position.x, position.y));
   }
+  function resizePill(height: number) { if (pillHeight === height) return; pillHeight = height; if (!configure && !providerDetail && settings.size === 'compact') void applyWindow().catch(() => error = 'The HUD window could not be resized. Reopen it from the tray.'); }
 
   async function openConfiguration() { configure = true; providerDetail = null; settings.step = 1; await applyWindow(); }
 
@@ -170,8 +193,10 @@
   }
 
   async function refreshProviders(force = false) {
-
-    if (document.hidden || stop || (paused && !force) || providerBusy) return;
+    if (stop || (!force && (document.hidden || paused))) return;
+    await queuedProviderRead(force);
+  }
+  async function readProviders(force: boolean) {
     providerBusy = true;
     lastProviderPoll = Date.now() / 1000;
 
@@ -187,71 +212,54 @@
 
       seenAlerts = new Set(providers.attention.map(a => a.id));
 
-    } catch { error = 'AI sources could not be refreshed. System monitoring can continue.'; }
+    } catch { error = 'AI sources could not be refreshed. System monitoring can continue.'; if (force) throw new Error('Source refresh failed'); }
     finally { providerBusy = false; }
 
   }
 
   async function connectCodex() {
-
-    busy = true; error = ''; notice = '';
-
-    try {
-
-      if (!native) { notice = 'Install Neon HUD to connect the local Codex CLI.'; return; }
-
+    if (connecting) return;
+    error = ''; notice = '';
+    await runConnection(async () => {
+      if (!native) return 'Install Neon HUD to connect the local Codex CLI.';
       settings.codexEnabled = true;
-
       await saveSettings(settings);
-
-      notice = await invoke<string>('connect_codex');
-
-      await refreshProviders();
-
-    } catch { error = 'Codex could not connect. Install the Codex CLI, then try again. Existing login is reused through its supported app-server.'; }
-
-    finally { busy = false; }
-
+      const message = await invoke<string>('connect_codex');
+      await refreshProviders(true);
+      return message;
+    }, value => codexAttempt = value, 'Connecting to Codex… finish sign-in in your browser if prompted.', 'Codex could not connect. Install the Codex CLI and retry; an existing sign-in is reused.');
   }
 
   async function connectClaude() {
-
-    busy = true; error = ''; notice = '';
-
-    try {
-
-      if (!native) { notice = 'Install Neon HUD to enable the Claude Code bridge.'; return; }
-
-      notice = await invoke<string>('install_claude_bridge');
-
-      await refreshProviders();
-
-    } catch { error = 'The Claude bridge could not be installed. Check access to Claude Code settings and retry.'; }
-
-    finally { busy = false; }
-
+    if (connecting) return;
+    error = ''; notice = '';
+    await runConnection(async () => {
+      if (!native) return 'Install Neon HUD to enable the Claude Code bridge.';
+      const message = await invoke<string>('install_claude_bridge');
+      await refreshProviders(true);
+      return message;
+    }, value => bridgeAttempt = value, 'Enabling the Claude Code bridge…', 'The Claude bridge could not be enabled. Check access to Claude Code settings and retry.');
   }
 
   async function disconnectCodex() {
-
-    settings.codexEnabled = false;
-
-    await saveSettings(settings);
-
-    if (native) await invoke('disconnect_codex');
-
-    await refreshProviders();
-
+    if (connecting) return;
+    await runConnection(async () => {
+      settings.codexEnabled = false;
+      await saveSettings(settings);
+      if (native) await invoke('disconnect_codex');
+      await refreshProviders(true);
+      return 'Codex disconnected.';
+    }, value => codexAttempt = value, 'Disconnecting Codex…', 'Codex could not disconnect. Retry or restart Neon HUD.');
   }
 
   async function removeClaudeBridge() {
-
-    if (!native) return;
-
-    try { notice = await invoke<string>('remove_claude_bridge'); await refreshProviders(); }
-
-    catch { error = 'The Claude bridge could not be removed. See the connection guide for recovery.'; }
-
+    if (connecting) return;
+    await runConnection(async () => {
+      if (!native) return 'Install Neon HUD to manage the local Claude bridge.';
+      const message = await invoke<string>('remove_claude_bridge');
+      await refreshProviders(true);
+      return message;
+    }, value => bridgeAttempt = value, 'Removing the Claude Code bridge…', 'The Claude bridge could not be removed. See the connection guide for recovery.');
   }
 
   function toggleDrive(id: string, checked: boolean) {
@@ -279,11 +287,7 @@
 
     providerDetail = surface as Surface;
 
-    if (native && !configure) {
-
-      await getCurrentWindow().setSize(new LogicalSize(680, 440));
-
-    }
+    if (!configure) await applyWindow();
 
   }
 
@@ -302,6 +306,7 @@
       loaded = true;
 
       if (native) {
+        appVersion = await getVersion();
 
         monitors = (await availableMonitors()).map((m, i) => m.name || `Display ${i + 1}`);
 
@@ -318,6 +323,7 @@
       }
 
       await refreshSystem(); await refreshProviders();
+      void checkUpdates(true);
 
     })().catch(() => { loaded = true; error = 'Some startup settings could not be loaded. You can continue configuring the HUD.'; });
 
@@ -327,6 +333,10 @@
       if (now - lastSystemPoll >= resources.systemSeconds) void refreshSystem();
       if (now - lastProviderPoll >= resources.providerSeconds) void refreshProviders();
     }, 1000);
+    // Works from the tray too; defer automatic network work during pressure.
+    const updatesTimer = setInterval(() => {
+      if (loaded && Date.now() - lastUpdateCheck >= 6 * 60 * 60 * 1000) void checkUpdates(true);
+    }, 60000);
 
     const recover = setInterval(async () => {
 
@@ -352,13 +362,13 @@
 
     document.addEventListener('visibilitychange', resume);
 
-    return () => { stop = true; clearTimeout(saveTimer); [timer, recover].forEach(clearInterval); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
+    return () => { stop = true; clearTimeout(saveTimer); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
 
   });
 
 </script>
 
-<main use:mischief={{ mode: effectiveMotion, reduced: settings.reducedMotion }} data-theme={settings.theme} data-motion={effectiveMotion} data-resource-mode={resources.mode} class:reduced-motion={settings.reducedMotion} class:configuration={configure} style={`--panel-opacity:${settings.opacity};--text-scale:${settings.textScale}`}>
+<main use:mischief={{ mode: effectiveMotion, reduced: settings.reducedMotion }} data-theme={settings.theme} data-motion={effectiveMotion} data-resource-mode={resources.mode} class:pill-window={loaded && !configure && !providerDetail && settings.size === 'compact'} class:reduced-motion={settings.reducedMotion} class:configuration={configure} style={`--panel-opacity:${settings.opacity};--text-scale:${settings.textScale}`}>
 
   {#if !loaded}<div class="loading">Starting Neon HUD…</div>
 
@@ -390,7 +400,7 @@
 
           </fieldset>
 
-          <fieldset class="motion-picker"><legend>How much mischief?</legend><div class="motion-options">{#each [{id:'quiet',label:'Quiet',icon:'orbit'},{id:'playful',label:'Playful',icon:'star'},{id:'chaotic',label:'Chaos!',icon:'spark'}] as mode}<button aria-pressed={settings.motion === mode.id} class:chosen={settings.motion === mode.id} onclick={() => settings.motion = mode.id as Settings['motion']}><Icon name={mode.icon} size={19}/><span>{mode.label}</span></button>{/each}</div></fieldset><label for="size">Size<select id="size" bind:value={settings.size}><option value="compact">Floating · 360 × 240 with storage</option><option value="expanded">Expanded · 680 × 500</option></select></label><details class="advanced-settings"><summary>Placement & readability</summary><label for="corner">Position<select id="corner" bind:value={settings.corner}><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+          <fieldset class="motion-picker"><legend>How much mischief?</legend><div class="motion-options">{#each [{id:'quiet',label:'Quiet',icon:'orbit'},{id:'playful',label:'Playful',icon:'star'},{id:'chaotic',label:'Chaos!',icon:'spark'}] as mode}<button aria-pressed={settings.motion === mode.id} class:chosen={settings.motion === mode.id} onclick={() => settings.motion = mode.id as Settings['motion']}><Icon name={mode.icon} size={19}/><span>{mode.label}</span></button>{/each}</div></fieldset><label for="size">Size<select id="size" bind:value={settings.size}><option value="compact">Pill · 280 × 56</option><option value="expanded">Expanded · 680 × 500</option></select></label><details class="advanced-settings"><summary>Placement & readability</summary><label for="corner">Position<select id="corner" bind:value={settings.corner}><option value="middle-right">Right side</option><option value="middle-left">Left side</option><option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
 
           <label for="monitor">Display<select id="monitor" bind:value={settings.monitor}>{#each monitors as monitor, index}<option value={index}>{monitor}</option>{/each}</select></label>
 
@@ -398,7 +408,7 @@
 
           <label class="toggle" for="always-top"><input id="always-top" type="checkbox" bind:checked={settings.alwaysOnTop}/><span>Keep HUD above other windows</span></label></details>
 
-        </div><div class="preview-area"><div class="preview-heading"><span>LIVE PREVIEW</span><span class="sample-pill">SAMPLE DATA</span></div><div class="preview-stage"><Hud settings={{...settings, size: 'compact'}} snapshot={previewSnapshot} providers={previewProviders} {now} preview onTheme={cycleTheme} onMotion={toggleMotion}/></div><p class="preview-caption">The preview shows sample readings. Your real metrics appear after setup.</p><div class="preview-feature"><Icon name="cpu"/><span>System metrics stay on your device.</span></div><div class="preview-feature"><Icon name="question"/><span>AI icons signal when a connected session needs you.</span></div><button class="text-button demo-question" onclick={() => demoQuestion += 1}><Icon name="question" size={14}/> Test a sample question shake</button><button class="text-button demo-question" aria-pressed={demoPressure} onclick={() => demoPressure = !demoPressure}><Icon name="cpu" size={14}/>{demoPressure ? 'Stop sample pressure' : 'Test sample pressure badges'}</button></div></div>
+        </div><div class="preview-area"><div class="preview-heading"><span>LIVE PREVIEW</span><span class="sample-pill">SAMPLE DATA</span></div><div class="preview-stage"><Pill settings={{...settings, size: 'compact'}} snapshot={previewSnapshot} providers={previewProviders} {now} preview onTheme={cycleTheme} onMotion={toggleMotion}/></div><p class="preview-caption">The preview shows sample readings. Your real metrics appear after setup.</p><div class="preview-feature"><Icon name="cpu"/><span>System metrics stay on your device.</span></div><div class="preview-feature"><Icon name="question"/><span>AI icons signal when a connected session needs you.</span></div><button class="text-button demo-question" onclick={() => demoQuestion += 1}><Icon name="question" size={14}/> Test a sample question shake</button><button class="text-button demo-question" aria-pressed={demoPressure} onclick={() => demoPressure = !demoPressure}><Icon name="cpu" size={14}/>{demoPressure ? 'Stop sample pressure' : 'Test sample pressure badges'}</button></div></div>
 
       {:else if settings.step === 2}
 
@@ -407,16 +417,18 @@
         <div class="connection-grid">{#each ['chatgpt', 'codex', 'claude', 'claude-code'] as surface}
 
           {@const usage = providers.usages.find(p => p.surface === surface)}
+          {@const attempt = surface === 'codex' ? codexAttempt : surface === 'claude-code' ? bridgeAttempt : idleAttempt()}
+          {@const status = connectionView(surface as Surface, usage, attempt, !!providers.claudeBridgeEnabled)}
 
-          <article class="connection-card"><div class="connection-title"><Icon name={surface} size={26}/><h2>{surface === 'chatgpt' ? 'ChatGPT' : surface === 'codex' ? 'Codex' : surface === 'claude' ? 'Claude' : 'Claude Code'}</h2><span class="connection-state">{usage?.state === 'connected' ? 'Connected' : surface === 'chatgpt' ? 'Limited access' : 'Local source'}</span></div>
+          <article class="connection-card" aria-busy={attempt.phase === 'pending'}><div class="connection-title"><Icon name={surface} size={26}/><h2>{surface === 'chatgpt' ? 'ChatGPT' : surface === 'codex' ? 'Codex' : surface === 'claude' ? 'Claude' : 'Claude Code'}</h2><span class="connection-state" data-tone={status.tone}>{status.label}</span></div>
 
             <p>{surface === 'chatgpt' ? 'Chat quotas are separate from Codex. No supported automatic chat quota source is available in this version.' : surface === 'codex' ? 'Read the account allowance through the official Codex app-server. Existing Codex sign-in can be reused.' : surface === 'claude' ? 'Claude and Claude Code share account limits when signed in to the same account. Readings come from the Code bridge.' : 'Add a local statusline and question observer. Existing settings are backed up and preserved.'}</p>
 
-            <div class="source-note">{usage?.message || 'Not connected'}{#if usage?.fetchedAt} · Updated {new Date(usage.fetchedAt * 1000).toLocaleTimeString()}{/if}</div>
+            <div class="source-note" data-tone={status.tone} role="status" aria-live="polite">{#if attempt.phase === 'pending'}<span class="connection-progress" aria-hidden="true"></span>{/if}{status.message}{#if usage?.fetchedAt && attempt.phase !== 'pending'} · Updated {new Date(usage.fetchedAt * 1000).toLocaleTimeString()}{/if}</div>
 
-            <div class="connection-actions">{#if surface === 'codex'}<button class="secondary" disabled={busy} onclick={connectCodex}>Connect Codex</button>{#if settings.codexEnabled}<button class="text-button" onclick={disconnectCodex}>Disconnect</button>{/if}<button class="text-button" onclick={() => openLink('codex-install')}>Install CLI ↗</button>
+            <div class="connection-actions">{#if surface === 'codex'}<button class="secondary" disabled={connecting} onclick={connectCodex}>{codexAttempt.phase === 'pending' ? 'Working…' : status.tone === 'connected' ? 'Reconnect Codex ✓' : codexAttempt.phase === 'error' ? 'Retry connection' : 'Connect Codex'}</button>{#if settings.codexEnabled}<button class="text-button" disabled={connecting} onclick={disconnectCodex}>Disconnect</button>{/if}<button class="text-button" onclick={() => openLink('codex-install')}>Install CLI ↗</button>
 
-            {:else if surface === 'claude-code'}<button class="secondary" disabled={busy} onclick={connectClaude}>Enable bridge</button><button class="text-button" onclick={removeClaudeBridge}>Remove bridge</button><button class="text-button" onclick={() => openLink(surface)}>Install CLI ↗</button>
+            {:else if surface === 'claude-code'}<button class="secondary" disabled={connecting} onclick={connectClaude}>{bridgeAttempt.phase === 'pending' ? 'Working…' : providers.claudeBridgeEnabled ? 'Bridge enabled ✓' : bridgeAttempt.phase === 'error' ? 'Retry bridge' : 'Enable bridge'}</button><button class="text-button" disabled={connecting} onclick={removeClaudeBridge}>Remove bridge</button><button class="text-button" onclick={() => openLink(surface)}>Install CLI ↗</button>
 
             {:else}<button class="secondary" onclick={() => openLink(surface)}>Open provider ↗</button>{/if}</div>
 
@@ -436,7 +448,19 @@
           <p class="field-hint">Hover a drive for exact used/free/total measurements. Capacity is per volume; shared storage pools can appear on more than one volume.</p>
         </fieldset></section>
 
-        <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><fieldset class="pressure-settings"><legend>Performance pressure thresholds</legend><div class="form-grid"><label for="cpu-pressure">CPU load %<input id="cpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.cpuPercent}/></label><label for="ram-pressure">RAM used %<input id="ram-pressure" type="number" min="50" max="100" bind:value={settings.performance.memoryPercent}/></label><label for="temp-pressure">Temperature °C<input id="temp-pressure" type="number" min="40" max="120" bind:value={settings.performance.temperatureCelsius}/></label><label for="drive-pressure">Drive used %<input id="drive-pressure" type="number" min="50" max="100" bind:value={settings.performance.storagePercent}/></label></div><p class="field-hint">! flags sustained CPU/RAM pressure (10 seconds), high reported temperatures, or low drive space. Hover for the cause. These signals suggest possible slowdown; thermal throttling is not measured. Temperature is unavailable when no sensor is reported.</p></fieldset><label class="toggle" for="adaptive-resources"><input id="adaptive-resources" type="checkbox" bind:checked={settings.resources.adaptive}/><span>Smart resource mode · adapt to system pressure</span></label><p class="field-hint">CPU/RAM pressure or high reported temperature slows system checks to 4–8 seconds, AI checks to 10–15 seconds, and quiets motion. Recovery needs 20 healthy seconds per step. Drive and route checks are cached longer. Your motion choice returns automatically.</p><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section></div>
+        <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><fieldset class="pressure-settings"><legend>Performance pressure thresholds</legend><div class="form-grid"><label for="cpu-pressure">CPU load %<input id="cpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.cpuPercent}/></label><label for="ram-pressure">RAM used %<input id="ram-pressure" type="number" min="50" max="100" bind:value={settings.performance.memoryPercent}/></label><label for="temp-pressure">Temperature °C<input id="temp-pressure" type="number" min="40" max="120" bind:value={settings.performance.temperatureCelsius}/></label><label for="drive-pressure">Drive used %<input id="drive-pressure" type="number" min="50" max="100" bind:value={settings.performance.storagePercent}/></label></div><p class="field-hint">! flags sustained CPU/RAM pressure (10 seconds), high reported temperatures, or low drive space. Hover for the cause. These signals suggest possible slowdown; thermal throttling is not measured. Temperature is unavailable when no sensor is reported.</p></fieldset><label class="toggle" for="adaptive-resources"><input id="adaptive-resources" type="checkbox" bind:checked={settings.resources.adaptive}/><span>Smart resource mode · adapt to system pressure</span></label><p class="field-hint">CPU/RAM pressure or high reported temperature slows system checks to 4–8 seconds, AI checks to 10–15 seconds, and quiets motion. Recovery needs 20 healthy seconds per step. Drive and route checks are cached longer. Your motion choice returns automatically.</p><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section>
+        <section class="preferences-panel update-panel"><h2>App updates <small>v{appVersion}</small></h2>
+          <label class="toggle" for="auto-updates"><input id="auto-updates" type="checkbox" bind:checked={settings.autoUpdates}/><span>Automatically check and download updates</span></label>
+          <p class="field-hint">Checks GitHub on startup and every 6 hours. Downloads wait during high system pressure. Installation and restart require your click.</p>
+          <p class="update-status" role="status" aria-live="polite">{updateStatus.message}</p>
+          {#if updateStatus.phase === 'downloading'}<progress aria-label="Update download" max={updateStatus.total || undefined} value={updateStatus.total ? updateStatus.received || 0 : undefined}></progress><small>{((updateStatus.received || 0) / 1048576).toFixed(1)} MiB{updateStatus.total ? ` / ${(updateStatus.total / 1048576).toFixed(1)} MiB` : ' downloaded'}</small>{/if}
+          <div class="update-actions">
+            <button class="secondary" disabled={!native || ['checking','downloading','installing'].includes(updateStatus.phase)} onclick={() => checkUpdates()}>Check updates</button>
+            {#if updateStatus.phase === 'available' || (updateStatus.phase === 'error' && updater.canDownload)}<button class="primary" onclick={() => updater.download()}>Download update</button>{/if}
+            {#if updateStatus.phase === 'ready' || (updateStatus.phase === 'error' && updater.canInstall)}<button class="primary" onclick={installUpdate}>Install &amp; restart</button>{/if}
+            {#if updateStatus.phase === 'restart'}<button class="primary" onclick={() => invoke('restart_app')}>Restart Neon HUD</button>{/if}
+          </div>
+        </section></div>
 
       {/if}
 
@@ -462,6 +486,6 @@
 
     </section>
 
-  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}><Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} {resources} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/></div>{/if}
+  {:else}<div class="hud-window" style={`zoom:${settings.textScale}`}>{#if settings.size === 'compact'}<Pill {settings} {snapshot} {providers} {now} {drainTracker} onSpace={resizePill} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{:else}<Hud {settings} {snapshot} {providers} {now} {history} {drainTracker} {resources} onSettings={openConfiguration} onExpand={toggleSize} onHide={hide} onProvider={showProvider} {paused} onPause={togglePause} onRefresh={refreshNow} onTheme={cycleTheme} onMotion={toggleMotion} onPin={togglePin}/>{/if}</div>{/if}
 
 </main>

@@ -2,6 +2,20 @@
 
 Checked on 7 October 2026.
 
+## 0.1.1 refinement
+
+- `npm run verify`: 36 tests across nine files, zero Svelte errors/warnings and successful production build.
+- Rust formatting passed; dependency audit reported zero vulnerabilities.
+- Browser fixture passed connection pending/disabled state, Claude bridge waiting/removal, Codex connected feedback, updater current-version feedback and persisted update preference.
+- The pill measured 272 × 48 inside a 280 × 56 window with no horizontal overflow. Hover GiB details, bounded quick controls, Escape/Shift+F10 and 430px settings passed without JavaScript errors. Pill, hover, menu and narrow settings captures were inspected.
+- Update tests cover concurrent checks, progress, signature failures/retries, no install before verification or without explicit action, and cleanup after an in-flight download. Provider overlap tests cover prior rejected requests and serialized actions.
+- Independent review identified and resolved the prior-refresh rejection race and fork-PR signing-secret gap. Publishing a real signed platform manifest is required before updater delivery can be claimed.
+- The installed Claude bridge was configured with all seven hooks; the official CLI confirmed authenticated status. No live account-limit reading has been observed yet. Fixtures use sample data and do not prove provider quota.
+
+Native 0.1.1 tests/packages, published manifest checks and installed-window proof are pending at this checkpoint. The existing 0.1.0 evidence follows.
+
+## 0.1.0 baseline
+
 - `npm run verify`: Svelte check with zero errors/warnings; 21 tests in five files; production frontend build passed.
 - `npm audit --audit-level=high`: zero reported vulnerabilities.
 - Browser fixtures: first-run preferences, two detected drives, selection persistence, startup preference persistence, threshold migration, 360 × 240 compact fit, 400px settings width, hover details, keyboard/right-click menu, pause/manual refresh, theme changes, reduced motion and finite bursts capped at 24 particles passed.

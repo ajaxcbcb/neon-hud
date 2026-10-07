@@ -31,3 +31,7 @@
   {:else if name === 'spark'}<path d="m12 1 2.2 7.5L22 6l-4.5 6L23 16l-8-1.2L12 23l-2.5-8L2 18l4.5-6L1 7l8.2 1.5Z"/>
   {/if}
 </svg>
+
+<style>
+  image { filter: invert(1); }
+</style>

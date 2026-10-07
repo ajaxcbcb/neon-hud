@@ -1,6 +1,6 @@
 # Meet Neon HUD
 
-A tiny, interactive desktop instrument panel that stays out of your way. Start with **Appearance**, choose your neon atmosphere, connect optional AI sources, then set the measurements you want. The default 360 × 240 HUD lives in a display corner and can hide to the system tray or Mac menu bar.
+A tiny, interactive desktop instrument panel that stays out of your way. Start with **Appearance**, choose your neon atmosphere, connect optional AI sources, then set the measurements you want. The default 280 × 56 HUD is a floating side pill and can hide to the system tray or Mac menu bar. Hover reveals measurements and right-click opens quick controls; click opens the full meters and graphs.
 
 ## Read your machine at a glance
 

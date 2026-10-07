@@ -6,7 +6,7 @@ export interface Settings {
   step: number;
   theme: Theme;
   size: 'compact' | 'expanded';
-  corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'middle-left' | 'middle-right';
   monitor: number;
   alwaysOnTop: boolean;
   opacity: number;
@@ -23,6 +23,7 @@ export interface Settings {
   performance: { cpuPercent: number; memoryPercent: number; temperatureCelsius: number; storagePercent: number };
   resources: { adaptive: boolean };
   codexEnabled: boolean;
+  autoUpdates: boolean;
 }
 export interface SystemSnapshot {
   sampledAt: number;
@@ -64,16 +65,17 @@ export interface Attention {
   occurredAt: number;
   sessionId: string;
 }
-export interface ProviderSnapshot { usages: Usage[]; attention: Attention[]; }
+export interface ProviderSnapshot { usages: Usage[]; attention: Attention[]; claudeBridgeEnabled?: boolean; }
 export const defaults: Settings = {
   version: 1, completed: false, step: 1, theme: 'circuit', size: 'compact',
-  corner: 'bottom-right', monitor: 0, alwaysOnTop: true, opacity: 1, textScale: 1,
+  corner: 'middle-right', monitor: 0, alwaysOnTop: true, opacity: 1, textScale: 1,
   reducedMotion: false, motion: 'chaotic', launchAtLogin: false, notifications: false, interface: 'auto',
   warning: 20, critical: 10, metrics: { cpu: true, ram: true, network: true, storage: true, ai: true },
   storageDriveIds: [],
   performance: { cpuPercent: 90, memoryPercent: 90, temperatureCelsius: 85, storagePercent: 90 },
   resources: { adaptive: true },
   codexEnabled: false,
+  autoUpdates: true,
 };
 export function normalizeSettings(value: unknown): Settings {
   const input = (value && typeof value === 'object' ? value : {}) as Partial<Settings>;
@@ -82,7 +84,7 @@ export function normalizeSettings(value: unknown): Settings {
   if (!['circuit', 'cyberpunk', 'aurora'].includes(result.theme)) result.theme = defaults.theme;
   if (!['compact', 'expanded'].includes(result.size)) result.size = defaults.size;
   if (!['chaotic', 'playful', 'quiet'].includes(result.motion)) result.motion = defaults.motion;
-  if (!['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(result.corner)) result.corner = defaults.corner;
+  if (!['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right'].includes(result.corner)) result.corner = defaults.corner;
   const clamp = (n: number, low: number, high: number, fallback: number) => Number.isFinite(n) ? Math.min(high, Math.max(low, n)) : fallback;
   result.opacity = clamp(result.opacity, .85, 1, 1);
   result.textScale = clamp(result.textScale, .9, 1.15, 1);
@@ -92,7 +94,7 @@ export function normalizeSettings(value: unknown): Settings {
   result.critical = clamp(result.critical, 0, result.warning, 10);
   for (const key of ['cpuPercent', 'memoryPercent', 'storagePercent'] as const) result.performance[key] = clamp(result.performance[key], 50, 100, defaults.performance[key]);
   result.performance.temperatureCelsius = clamp(result.performance.temperatureCelsius, 40, 120, 85);
-  for (const name of ['completed', 'alwaysOnTop', 'reducedMotion', 'launchAtLogin', 'notifications', 'codexEnabled'] as const) {
+  for (const name of ['completed', 'alwaysOnTop', 'reducedMotion', 'launchAtLogin', 'notifications', 'codexEnabled', 'autoUpdates'] as const) {
     result[name] = typeof result[name] === 'boolean' ? result[name] : defaults[name];
   }
   for (const name of ['cpu', 'ram', 'network', 'storage', 'ai'] as const) result.metrics[name] = typeof result.metrics[name] === 'boolean' ? result.metrics[name] : true;
