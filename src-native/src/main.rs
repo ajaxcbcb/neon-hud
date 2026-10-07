@@ -813,6 +813,21 @@ impl App {
                 }
                 // Read secondary input for the whole pill, including metric and grip widgets.
                 // An egui context_menu would be clipped by this 56-point native viewport.
+                if self.smoke {
+                    ctx.input(|i| {
+                        let button = egui::PointerButton::Secondary;
+                        if i.pointer.button_pressed(button) || i.pointer.button_released(button) {
+                            eprintln!(
+                                "NEON_SECONDARY pressed={} released={} clicked={} pos={:?} pill={:?}",
+                                i.pointer.button_pressed(button),
+                                i.pointer.button_released(button),
+                                i.pointer.button_clicked(button),
+                                i.pointer.interact_pos(),
+                                r,
+                            );
+                        }
+                    });
+                }
                 let open = ctx.input(|i| {
                     (i.pointer.button_clicked(egui::PointerButton::Secondary)
                         && i.pointer.interact_pos().is_some_and(|pos| r.contains(pos)))
@@ -821,6 +836,12 @@ impl App {
                             && i.key_pressed(egui::Key::F10))
                 });
                 if open {
+                    if self.smoke {
+                        eprintln!(
+                            "NEON_CONTROLS open hud={:?}",
+                            ctx.input(|i| i.viewport().outer_rect)
+                        );
+                    }
                     self.controls = ctx.input(|i| i.viewport().outer_rect);
                     self.controls_focused = false;
                     self.hover = None;
@@ -1907,6 +1928,13 @@ impl App {
                 if ctx.input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape))
                     || (self.controls_focused && !focused)
                 {
+                    if self.smoke {
+                        eprintln!(
+                            "NEON_CONTROLS dismiss focused={focused} prior_focused={} escape={}",
+                            self.controls_focused,
+                            ctx.input(|i| i.key_pressed(egui::Key::Escape)),
+                        );
+                    }
                     self.controls = None;
                 }
                 self.controls_focused |= focused;

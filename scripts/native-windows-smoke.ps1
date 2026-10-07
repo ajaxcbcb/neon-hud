@@ -28,6 +28,7 @@ using System.Text;
 
 public static class NativeHudCapture {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int Size; public RECT Monitor, Work; public int Flags; }
     public class WindowInfo { public IntPtr Handle; public string Title; public RECT Rect; }
     public delegate bool EnumWindowsCallback(IntPtr window, IntPtr param);
@@ -39,6 +40,8 @@ public static class NativeHudCapture {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, StringBuilder title, int maxCount);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
@@ -263,6 +266,11 @@ try {
             $hitX = if ($edge -eq 'top') { 10 } elseif ($edge -eq 'bottom') { 140 } else { 42 }
             $hitY = if ($edge -eq 'bottom') { 3 } else { 25 }
             if (-not [NativeHudCapture]::SetCursorPos($xs[$xKey]+$hitX, $ys[$yKey]+$hitY)) { throw 'Could not move to CI right-click target' }
+            Start-Sleep -Milliseconds 200
+            $currentHud = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Handle -eq $hudWindow.Handle } | Select-Object -First 1
+            $cursor = [NativeHudCapture+POINT]::new()
+            if ($null -eq $currentHud -or -not [NativeHudCapture]::GetCursorPos([ref]$cursor)) { throw 'CI right-click target is unavailable' }
+            if ($currentHud.Rect.Left -ne $xs[$xKey] -or $currentHud.Rect.Top -ne $ys[$yKey] -or [NativeHudCapture]::GetForegroundWindow() -ne $hudWindow.Handle -or [NativeHudCapture]::WindowFromPoint($cursor) -ne $hudWindow.Handle) { throw "CI right-click target was not ready at $edge" }
             [NativeHudCapture]::Click($true)
             $menuDeadline = (Get-Date).AddSeconds(2)
             do {
@@ -395,6 +403,11 @@ try {
     [ordered]@{
         result = 'failed'
         failure = $_.Exception.Message
+        elapsedSeconds = [math]::Round(((Get-Date)-$started).TotalSeconds, 2)
+        processExited = $process.HasExited
+        successfulMenuEdges = @($menuChecks)
+        visibleWindows = @([NativeHudCapture]::VisibleWindows([uint32]$process.Id) | ForEach-Object { [pscustomobject]@{ title=$_.Title; rectangle=$_.Rect } })
+        foregroundWindow = [NativeHudCapture]::GetForegroundWindow().ToInt64()
         screenshots = @(Get-ChildItem -LiteralPath $OutputDirectory -Filter 'native-*.png' -File | Select-Object -ExpandProperty Name)
     } | ConvertTo-Json | Set-Content -LiteralPath $receiptPath
     throw
