@@ -9,4 +9,6 @@
 
 The original arcade interface draws inspiration from [Uiverse button effects](https://uiverse.io/button-effects). No Uiverse component source is bundled.
 
-Dependency versions are recorded in `package-lock.json` and `src-tauri/Cargo.lock`. Svelte, Vite and their dependencies retain their upstream licenses; Tauri and Rust dependencies retain theirs. Release packages include project license files and provider graphic notices. This list does not relicense third-party dependencies or trademarks.
+The native renderer uses egui/eframe 0.33.3 (MIT OR Apache-2.0), copyright Emil Ernerfeldt. Its default fonts include Hack, Noto Emoji, Ubuntu Light and emoji-icon-font. Their upstream notices and full licenses are copied unchanged from [egui 0.33.3](https://github.com/emilk/egui/tree/0.33.3/crates/epaint_default_fonts/fonts) into `src-native/licenses/` and native preview packages. Native metric symbols are drawn by the application rather than loading the web renderer's graphic files.
+
+Dependency versions are recorded in `package-lock.json`, `src-tauri/Cargo.lock` and `src-native/Cargo.lock`. Svelte, Vite and their dependencies retain their upstream licenses; Tauri and Rust dependencies retain theirs. Release packages include project license files and provider graphic notices. This list does not relicense third-party dependencies or trademarks.

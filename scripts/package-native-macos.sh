@@ -19,7 +19,8 @@ app="$out/Neon HUD Native.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/neon-hud-native"
 chmod 755 "$app/Contents/MacOS/neon-hud-native"
-cp LICENSE-APACHE NOTICE THIRD-PARTY-NOTICES.md "$app/Contents/Resources/"
+cp LICENSE LICENSE-MIT LICENSE-APACHE NOTICE THIRD-PARTY-NOTICES.md "$app/Contents/Resources/"
+cp -R src-native/licenses "$app/Contents/Resources/"
 cp src-tauri/icons/icon.icns "$app/Contents/Resources/NeonHud.icns"
 
 cat > "$app/Contents/Info.plist" <<EOF

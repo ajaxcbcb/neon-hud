@@ -80,13 +80,13 @@ pub fn bar(ui: &mut egui::Ui, value: Option<f64>, width: f32) {
         }
     }
 }
-pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, p: Palette) {
+pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, remaining: bool, p: Palette) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(130., 100.), egui::Sense::hover());
     let c = r.center() + Vec2::new(0., 8.);
     for i in 0..40 {
         let a = std::f32::consts::PI * (1.15 + i as f32 / 39. * 1.7);
         let color = if value.is_some_and(|v| i as f64 / 39. * 100. <= v) {
-            stress(i as f64 / 39. * 100.)
+            stress(super::model::stress_percent(i as f64 / 39. * 100., remaining))
         } else {
             p.panel
         };

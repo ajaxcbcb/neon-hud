@@ -110,15 +110,11 @@ pub fn resource_mode(system: &Value, settings: &Value) -> Mode {
         number(&system["memory"], "total"),
     )
     .unwrap_or(0.0);
-    let hot = array(system, "temperatures")
-        .iter()
-        .filter_map(|v| number(v, "celsius"))
-        .chain(
-            array(system, "gpus")
-                .iter()
-                .filter_map(|v| number(v, "temperatureCelsius")),
-        )
-        .any(|t| t >= number(&settings["performance"], "temperatureCelsius").unwrap_or(85.0));
+    let hot = component_heat(system, settings)
+        || array(system, "gpus")
+            .iter()
+            .filter_map(|v| number(v, "temperatureCelsius"))
+            .any(|t| t >= temperature_limit(settings));
     if hot || ram >= 97.0 {
         Mode::Critical
     } else if cpu >= number(&settings["performance"], "cpuPercent").unwrap_or(90.0)
@@ -128,6 +124,19 @@ pub fn resource_mode(system: &Value, settings: &Value) -> Mode {
     } else {
         Mode::Normal
     }
+}
+pub fn temperature_limit(settings: &Value) -> f64 {
+    number(&settings["performance"], "temperatureCelsius").unwrap_or(85.0)
+}
+pub fn component_heat(system: &Value, settings: &Value) -> bool {
+    array(system, "temperatures")
+        .iter()
+        .filter_map(|v| number(v, "celsius"))
+        .any(|t| t >= temperature_limit(settings))
+}
+pub fn stress_percent(value: f64, remaining: bool) -> f64 {
+    let stress = if remaining { 100.0 - value } else { value };
+    stress.clamp(0.0, 100.0)
 }
 
 #[derive(Clone, Default)]
@@ -292,5 +301,18 @@ mod tests {
         assert_eq!(Mode::Critical.interval(250, false), 8000);
         assert_eq!(Mode::Normal.interval(250, true), 8000);
         assert_eq!(percent(ratio(Some(12.), Some(0.))), "—");
+        let disabled =
+            json!({"resources":{"adaptive":false},"performance":{"temperatureCelsius":85}});
+        let hot = json!({"cpu":5,"temperatures":[{"celsius":90}]});
+        assert!(component_heat(&hot, &disabled));
+        assert_eq!(resource_mode(&hot, &disabled), Mode::Normal);
+        assert!(!component_heat(&json!({}), &s));
+    }
+    #[test]
+    fn remaining_allowance_and_used_resources_have_opposite_stress() {
+        assert_eq!(stress_percent(5., true), 95.);
+        assert_eq!(stress_percent(5., false), 5.);
+        assert_eq!(stress_percent(100., true), 0.);
+        assert_eq!(stress_percent(100., false), 100.);
     }
 }

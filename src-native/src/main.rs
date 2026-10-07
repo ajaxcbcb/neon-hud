@@ -410,7 +410,7 @@ impl App {
                     percent(n),
                     n.is_some_and(|v| {
                         v >= number(&self.profile["performance"], "cpuPercent").unwrap_or(90.)
-                    }),
+                    }) || component_heat(&self.system, &self.profile),
                 )
             }
             "ram" => {
@@ -433,7 +433,10 @@ impl App {
                             .is_some_and(|t| (0.0..=12.).contains(&(now() - t)))
                 });
                 let n = g.and_then(|g| number(g, "utilizationPercent"));
-                (n, percent(n), n.is_some_and(|v| v >= 90.))
+                let hot = g
+                    .and_then(|g| number(g, "temperatureCelsius"))
+                    .is_some_and(|t| t >= temperature_limit(&self.profile));
+                (n, percent(n), n.is_some_and(|v| v >= 90.) || hot)
             }
             "storage" => {
                 let ds = self.selected_drives();
@@ -995,10 +998,10 @@ impl App {
         ui.label(egui::RichText::new(text(&claude, "message")).small());
         ui.add_enabled_ui(!self.busy, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("Enable bridge").clicked() {
+                if ui.button("Enable shared bridge").clicked() {
                     self.action(Command::Claude(true));
                 }
-                if ui.button("Remove preview bridge").clicked() {
+                if ui.button("Disable shared bridge").clicked() {
                     self.action(Command::Claude(false));
                 }
             });
@@ -1087,9 +1090,14 @@ impl App {
                         ui.separator();
                         let (value, label, attention) = self.reading(&self.selected);
                         ui.horizontal(|ui| {
-                            paint::gauge(ui, value, &self.selected.to_uppercase(), p);
+                            let remaining =
+                                matches!(self.selected.as_str(), "codex" | "claude" | "chatgpt");
+                            paint::gauge(ui, value, &self.selected.to_uppercase(), remaining, p);
                             ui.vertical(|ui| {
                                 ui.heading(label);
+                                if remaining {
+                                    ui.label("remaining allowance");
+                                }
                                 if attention {
                                     ui.colored_label(p.pop, "! Needs attention");
                                 }
@@ -1285,7 +1293,8 @@ impl App {
                                 p.accent
                             }));
                         });
-                        paint::bar(ui, value, 218.);
+                        let remaining = matches!(key.as_str(), "codex" | "claude" | "chatgpt");
+                        paint::bar(ui, value.map(|v| stress_percent(v, remaining)), 218.);
                         ui.label(
                             egui::RichText::new(
                                 "Click for measurements · right click for controls",
