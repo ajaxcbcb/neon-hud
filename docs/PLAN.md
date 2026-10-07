@@ -4,9 +4,9 @@ project_path: C:\Users\fuhui\Documents\ChatGPT\neon-hud
 
 Objective: Deliver a small native Windows/Mac HUD, with fixed settings pages, numerical system/AI readings, neon instruments, tray access, retained preferences, opt-in startup and public Apache 2.0/MIT source.
 
-Status: The separate unsigned native v0.2.0-alpha.1 is installed and running on the target Windows machine, with verified Desktop and Start menu shortcuts and a rendered 280 × 56 pill. The original v0.1.4 profile and Claude configuration remain unchanged. The native Rust preview on `codex/native-desktop` passed Windows/Mac tests, locked builds and Windows rendered-page inspection; its public artifact digests are verified. Target-machine Settings access from the pill was inconclusive, and desktop input has stopped.
+Status: The separate unsigned native v0.2.0-alpha.2 is published, installed and running on the target Windows machine, with verified Desktop and Start menu shortcuts. The old preview exited normally. The 280 × 56 pill and its 248 × 110 hover panel were inspected; at the user's current right-side position, the panel opened to the left and stayed within the work area. The pill was not moved. Original v0.1.4 profiles, native preferences and Claude configuration remain unchanged. Exact-source Windows/Mac tests, locked builds, Windows rendered-page inspection and eight edge/corner hover checks passed; public artifact digests are verified. Target-machine Settings access from the alpha.1 pill was inconclusive.
 
-Next: Publish the verified alpha.2 packages and apply an admitted target-machine update after the current native preview exits normally. Pill Settings/context-menu access remains open. Tray/drag/startup checks need their own runtime reservation. Complete in-process connectors and signed native updates before migration. Keep the stable updater manifest on 0.1.3 until replacement gates pass.
+Next: Pill Settings/context-menu access remains open. Tray/drag/startup checks need their own runtime reservation. Complete in-process connectors and signed native updates before migration. Keep the stable updater manifest on 0.1.3 until replacement gates pass.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|
@@ -15,7 +15,7 @@ Next: Publish the verified alpha.2 packages and apply an admitted target-machine
 | Native pill/settings/instruments | Coordinator | Headless core | Light source + cloud | Fixed pages without scrolling; preview profile and opt-in startup separate from installed app |
 | Native packages/render inspection | CI / coordinator | Integrated source | Cloud | Passed; Windows portable ZIP and Apple Silicon Mac app/DMG, unsigned preview; all fixed pages and pill inspected |
 | Edge-aware hover | Coordinator | Native pill + cached monitor bounds | Light source + cloud | Passed exact-source Windows/Mac CI; eight Windows cursor positions opened inward and stayed in the work area; native captures inspected |
-| Native target-machine check | Coordinator | Verified artifacts + admission | Own-app runtime | Installed and pill inspected; shortcuts and profile preservation passed; Settings from pill inconclusive, input stopped; tray/drag/startup remain open |
+| Native target-machine check | Coordinator | Verified artifacts + admission | Own-app runtime | Alpha.2 installed and running; pill and current-position hover inspected; shortcuts and unchanged preferences/configs passed. Settings from alpha.1 pill inconclusive; tray/drag/startup remain open |
 | Strict single OS process | Coordinator | In-process provider design | Source + runtime | Open; native renderer removes WebView, existing Codex and Claude helpers remain |
 | Native automatic updates | Coordinator | Signed release/restart path | Source + package/runtime | Open; preview does not consume installed updater manifest |
 
