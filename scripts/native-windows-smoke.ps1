@@ -439,8 +439,17 @@ try {
             $hudWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
             if ($null -eq $hudWindow) { throw "HUD disappeared before $action" }
             [NativeHudCapture]::SetForegroundWindow($hudWindow.Handle) | Out-Null
+            Start-Sleep -Milliseconds 300
+            # Use the settled HUD bounds after focus, just as the edge checks do.
+            # A preceding menu action can still be delivering native window events.
+            $hudWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Handle -eq $hudWindow.Handle -and $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
+            if ($null -eq $hudWindow) { throw "HUD disappeared while focusing before $action" }
+            if (-not [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+40, $hudWindow.Rect.Top+25)) { throw "Could not move to HUD before $action" }
             Start-Sleep -Milliseconds 200
-            [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+40, $hudWindow.Rect.Top+25) | Out-Null
+            $currentHud = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Handle -eq $hudWindow.Handle -and $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
+            $cursor = [NativeHudCapture+POINT]::new()
+            if ($null -eq $currentHud -or -not [NativeHudCapture]::GetCursorPos([ref]$cursor)) { throw "HUD target unavailable before $action" }
+            if ($currentHud.Rect.Left -ne $hudWindow.Rect.Left -or $currentHud.Rect.Top -ne $hudWindow.Rect.Top -or $currentHud.Rect.Right -ne $hudWindow.Rect.Right -or $currentHud.Rect.Bottom -ne $hudWindow.Rect.Bottom -or [NativeHudCapture]::GetForegroundWindow() -ne $hudWindow.Handle -or [NativeHudCapture]::WindowFromPoint($cursor) -ne $hudWindow.Handle) { throw "HUD pointer/focus was not ready before $action" }
             [NativeHudCapture]::Click($true)
             $actionDeadline = (Get-Date).AddSeconds(2)
             do {
@@ -567,6 +576,7 @@ try {
         successfulMenuEdges = @($menuChecks)
         visibleWindows = @([NativeHudCapture]::VisibleWindows([uint32]$process.Id) | ForEach-Object { [pscustomobject]@{ title=$_.Title; handle=$_.Handle.ToInt64(); rectangle=[pscustomobject]@{ left=$_.Rect.Left; top=$_.Rect.Top; right=$_.Rect.Right; bottom=$_.Rect.Bottom } } })
         foregroundWindow = [NativeHudCapture]::GetForegroundWindow().ToInt64()
+        recentControlEvents = @(if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr | Where-Object { $_ -match '^NEON_(SECONDARY|CONTROLS|CONTROL)\b' } | Select-Object -Last 30 })
         screenshots = @(Get-ChildItem -LiteralPath $OutputDirectory -Filter 'native-*.png' -File | Select-Object -ExpandProperty Name)
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $receiptPath
     throw
