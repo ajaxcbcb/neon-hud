@@ -317,6 +317,14 @@ try {
                 $menu = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD · Controls' } | Select-Object -First 1
             } while ($null -eq $menu -and (Get-Date) -lt $actionDeadline)
             if ($null -eq $menu) { throw "Controls did not reopen for $action" }
+            # A visible HWND can precede its first egui frame and final position.
+            # Capture the real rendered menu, then read its settled coordinates
+            # before physical input. Keep the action assertions below unchanged.
+            $width=0; $height=0; $colors=0
+            [NativeHudCapture]::Capture($menu.Handle, (Join-Path $OutputDirectory "native-controls-before-$action.png"), $true, [ref]$width, [ref]$height, [ref]$colors) | Out-Null
+            if ($colors -lt 3) { throw "Controls were not rendered before $action" }
+            $menu = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Handle -eq $menu.Handle } | Select-Object -First 1
+            if ($null -eq $menu) { throw "Controls disappeared before $action input" }
             $row = switch ($action) {
                 'settings' { 0 }
                 { $_ -in 'compress','expand' } { 1 }
@@ -326,6 +334,9 @@ try {
                 'quit' { 5 }
             }
             [NativeHudCapture]::SetCursorPos($menu.Rect.Left+120, $menu.Rect.Top+58+36*$row) | Out-Null
+            Start-Sleep -Milliseconds 150
+            $cursor = [NativeHudCapture+POINT]::new()
+            if (-not [NativeHudCapture]::GetCursorPos([ref]$cursor) -or [NativeHudCapture]::WindowFromPoint($cursor) -ne $menu.Handle -or [NativeHudCapture]::GetForegroundWindow() -ne $menu.Handle) { throw "Controls pointer/focus was not ready for $action" }
             [NativeHudCapture]::Click($false)
             $actionDeadline = (Get-Date).AddSeconds(2)
             do {
