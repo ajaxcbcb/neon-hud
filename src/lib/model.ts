@@ -25,6 +25,7 @@ export interface Settings {
   resources: { adaptive: boolean; samplingMs: number };
   codexEnabled: boolean;
   autoUpdates: boolean;
+  autoInstallUpdates: boolean;
 }
 export interface SystemSnapshot {
   sampledAt: number;
@@ -90,6 +91,7 @@ export const defaults: Settings = {
   resources: { adaptive: true, samplingMs: 250 },
   codexEnabled: false,
   autoUpdates: true,
+  autoInstallUpdates: false,
 };
 export function normalizeSettings(value: unknown): Settings {
   const input = (value && typeof value === 'object' ? value : {}) as Partial<Settings>;
@@ -110,7 +112,7 @@ export function normalizeSettings(value: unknown): Settings {
   result.critical = clamp(result.critical, 0, result.warning, 10);
   for (const key of ['cpuPercent', 'gpuPercent', 'memoryPercent', 'storagePercent'] as const) result.performance[key] = clamp(result.performance[key], 50, 100, defaults.performance[key]);
   result.performance.temperatureCelsius = clamp(result.performance.temperatureCelsius, 40, 120, 85);
-  for (const name of ['completed', 'alwaysOnTop', 'reducedMotion', 'launchAtLogin', 'notifications', 'codexEnabled', 'autoUpdates'] as const) {
+  for (const name of ['completed', 'alwaysOnTop', 'reducedMotion', 'launchAtLogin', 'notifications', 'codexEnabled', 'autoUpdates', 'autoInstallUpdates'] as const) {
     result[name] = typeof result[name] === 'boolean' ? result[name] : defaults[name];
   }
   for (const name of ['cpu', 'gpu', 'ram', 'network', 'storage', 'ai'] as const) result.metrics[name] = typeof result.metrics[name] === 'boolean' ? result.metrics[name] : true;

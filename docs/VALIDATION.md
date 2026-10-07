@@ -2,6 +2,12 @@
 
 Checked on 7 October 2026.
 
+## 0.1.3 quiet updates and retained profiles
+
+- Local frontend checks passed with zero Svelte errors/warnings, 63 tests across 12 files and a successful production build. Dependency audit reported zero vulnerabilities.
+- Tests cover quiet restart eligibility, fresh pressure checks, signature/download boundaries, failed automatic installation/manual retry, a changed update preference during a pending check, pending profile flush, serialized writes and recovery after write failure.
+- Native legacy-profile migration, malformed-file retention, Windows minimize-to-tray and both signed platform packages are awaiting cloud CI. Local native installation remains queued with the shared host coordinator; the installed app is still 0.1.0.
+
 ## 0.1.2 GPU and fast-sampling increment
 
 - Local Svelte/TypeScript check: zero errors and warnings. Frontend tests: 51 passed, including adapter selection, stale/null capability boundaries, cached GPU pressure timing, recovery evidence, independent polling and finite display transitions with an injected 144 Hz clock.

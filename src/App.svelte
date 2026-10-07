@@ -5,7 +5,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { getVersion } from '@tauri-apps/api/app';
   import { check as checkUpdate } from '@tauri-apps/plugin-updater';
-  import { UpdateController, type UpdateStatus } from './lib/updates';
+  import { UpdateController, automaticInstallReady, systemAllowsInstall, type UpdateStatus } from './lib/updates';
 
   import { listen } from '@tauri-apps/api/event';
 
@@ -19,6 +19,7 @@
   import { idleAttempt, runConnection, connectionView } from './lib/connections';
   import { createRefreshQueue } from './lib/refresh';
   import { createPoller } from './lib/polling';
+  import { createSettingsWriter } from './lib/preferences';
 
   import Icon from './components/Icon.svelte';
 
@@ -35,21 +36,55 @@
   let settings: Settings = structuredClone(defaults);
 
   let loaded = false;
-  let appVersion = '0.1.2';
+  let settingsLoaded = false;
+  let appVersion = '0.1.3';
   let updateStatus: UpdateStatus = { phase: native ? 'idle' : 'preview', message: native ? 'Updates are checked automatically.' : 'Updates are available in the installed app.' };
-  const updater = new UpdateController(() => checkUpdate({ timeout: 10000 }), value => updateStatus = value);
+  let updateReadyAt = 0;
+  let lastInteraction = Date.now();
+  let automaticInstallBusy = false;
+  let savePending = false;
+  let settingsSaveFailed = false;
+  const settingsWriter = createSettingsWriter(saveSettings, (pending, failed) => {
+    savePending = pending; settingsSaveFailed = failed;
+    if (failed) error = 'Settings could not be saved. Check write access to the app data folder.';
+  });
+  const updater = new UpdateController(() => checkUpdate({ timeout: 10000 }), value => {
+    updateStatus = value;
+    if (value.phase === 'ready') updateReadyAt = Date.now();
+  });
   let lastUpdateCheck = 0;
   async function checkUpdates(automatic = false) {
     if (!native || (automatic && (!settings.autoUpdates || resources.mode !== 'normal'))) return;
     lastUpdateCheck = Date.now();
-    await updater.check(automatic);
+    await updater.check(automatic ? () => !stop && settings.autoUpdates && resources.mode === 'normal' : false);
   }
-  async function installUpdate() {
-    await updater.install();
-    if (updateStatus.phase === 'restart') {
+  async function installUpdate(automatic = false) {
+    try { await flushSettings(); }
+    catch { error = 'Your profile could not be saved. Resolve the settings error before installing an update.'; return; }
+    if (automatic && !automaticInstallReady(autoInstallContext())) return;
+    if (await updater.install(automatic)) {
       try { await invoke('restart_app'); }
       catch { notice = 'Update installed. Quit and reopen Neon HUD to load it.'; }
     }
+  }
+  function autoInstallContext() {
+    const time = Date.now();
+    return { enabled: native && loaded && settingsLoaded && !stop && settings.completed && settings.autoInstallUpdates,
+      autoUpdates: settings.autoUpdates, idleMs: time - lastInteraction, readyMs: time - updateReadyAt,
+      configuring: configure || !!providerDetail, paused, connecting, saving: busy || savePending || settingsSaveFailed,
+      attention: providers.attention.length > 0, pressure: resources.mode !== 'normal' };
+  }
+  async function attemptAutomaticInstall() {
+    if (automaticInstallBusy || updateStatus.phase !== 'ready' || !updater.canInstall || !automaticInstallReady(autoInstallContext())) return;
+    automaticInstallBusy = true;
+    try {
+      // One bounded preflight per minute only while a verified update is waiting.
+      // Do not trust a hidden window's cached pressure or question state.
+      const freshSystem = await systemSnapshot(resources.mode, settings.resources.samplingMs);
+      await refreshProviders(true);
+      if (automaticInstallReady(autoInstallContext()) && systemAllowsInstall(freshSystem, settings, Date.now() / 1000)) await installUpdate(true);
+    } catch { /* Missing readings defer installation until the next quiet opportunity. */ }
+    finally { automaticInstallBusy = false; }
   }
 
   let configure = true;
@@ -104,19 +139,28 @@
 
   let stop = false;
 
-  let saveTimer: ReturnType<typeof setTimeout>;
-
   $: previewSnapshot = demoPressure ? { ...sampleSystem, sampledAt: now, gpus: sampleSystem.gpus?.map(gpu => ({ ...gpu, sampledAt: now })), cpu: 98, memory: { total: 32 * 1073741824, used: 31 * 1073741824, available: 1073741824 }, temperatures: [{ label: 'CPU Package (sample)', celsius: 95 }], drives: sampleSystem.drives.map((drive, index) => index ? drive : { ...drive, usedBytes: 502 * 1073741824, availableBytes: 10 * 1073741824 }) } : { ...sampleSystem, sampledAt: now, gpus: sampleSystem.gpus?.map(gpu => ({ ...gpu, sampledAt: now })) };
   $: previewProviders = { ...sampleProviders(now), attention: demoQuestion ? [{ id: `demo-${demoQuestion}`, surface: 'claude-code' as Surface, reason: 'Sample question', occurredAt: now, sessionId: 'preview' }] : [] };
 
-  $: if (loaded) { settings; scheduleSave(); }
+  $: if (loaded && settingsLoaded) { settings; scheduleSave(); }
 
   function scheduleSave() {
-
-    clearTimeout(saveTimer);
-
-    saveTimer = setTimeout(() => saveSettings(normalizeSettings(settings)).catch(() => { error = 'Settings could not be saved. Check write access to the app data folder.'; }), 350);
-
+    settingsWriter.schedule(() => normalizeSettings(settings));
+  }
+  async function flushSettings() {
+    if (!settingsLoaded) throw new Error('Saved profile is unavailable');
+    await settingsWriter.flush(() => normalizeSettings(settings));
+  }
+  async function quit() {
+    try {
+      // An unreadable profile is retained; quitting must not replace it with defaults.
+      if (settingsLoaded) await flushSettings();
+      await invoke('quit_app');
+    } catch { error = 'Settings could not be saved. Neon HUD remains open; reopen it from the tray to retry.'; }
+  }
+  async function restart() {
+    try { await flushSettings(); await invoke('restart_app'); }
+    catch { error = 'Neon HUD could not restart. Save your preferences and retry, or quit and reopen it from the tray.'; }
   }
 
   async function applyWindow() {
@@ -153,15 +197,17 @@
 
   async function finish() {
 
+    if (!settingsLoaded) { error = 'Your saved profile could not be loaded. Reopen the app after checking the settings file; it has been retained.'; return; }
+
     busy = true; error = '';
 
     try {
 
       settings = normalizeSettings({ ...settings, completed: true, step: 1 });
 
-      if (native) await invoke('set_preferences', { launchAtLogin: settings.launchAtLogin, notifications: settings.notifications });
+      await flushSettings();
 
-      await saveSettings(settings);
+      if (native) await invoke('set_preferences', { launchAtLogin: settings.launchAtLogin });
 
       configure = false;
 
@@ -229,7 +275,7 @@
     await runConnection(async () => {
       if (!native) return 'Install Neon HUD to connect the local Codex CLI.';
       settings.codexEnabled = true;
-      await saveSettings(settings);
+      await flushSettings();
       const message = await invoke<string>('connect_codex');
       await refreshProviders(true);
       return message;
@@ -251,7 +297,7 @@
     if (connecting) return;
     await runConnection(async () => {
       settings.codexEnabled = false;
-      await saveSettings(settings);
+      await flushSettings();
       if (native) await invoke('disconnect_codex');
       await refreshProviders(true);
       return 'Codex disconnected.';
@@ -287,7 +333,7 @@
 
   async function toggleSize() { settings.size = settings.size === 'compact' ? 'expanded' : 'compact'; await applyWindow(); }
 
-  function setVisible(visible: boolean) { windowVisible = visible; window.dispatchEvent(new CustomEvent('neon-visibility', { detail: visible })); }
+  function setVisible(visible: boolean) { windowVisible = visible; window.dispatchEvent(new CustomEvent('neon-visibility', { detail: visible })); if (visible) void applyWindow().catch(() => error = 'The window could not be restored. Reopen it from the tray.'); }
   async function hide() { if (native) { await getCurrentWindow().hide(); setVisible(false); } else notice = 'The desktop app hides to the system tray or menu bar.'; }
 
   async function showProvider(surface: string) {
@@ -307,8 +353,9 @@
     providerPoller = createPoller(() => refreshProviders(), () => resources.providerSeconds * 1000);
 
     (async () => {
-
-      settings = await loadSettings();
+      if (native) cleanups.push(await listen('quit-requested', quit));
+      try { settings = await loadSettings(); settingsLoaded = true; }
+      catch { error = 'Your saved profile could not be loaded. The existing file has been retained; automatic saving is disabled until it can be read.'; }
 
       configure = !settings.completed;
 
@@ -334,7 +381,7 @@
 
       void checkUpdates(true);
 
-    })().catch(() => { loaded = true; error = 'Some startup settings could not be loaded. You can continue configuring the HUD.'; });
+    })().catch(() => { loaded = true; error = 'Some startup services could not be loaded. Reopen Neon HUD from the tray to retry.'; });
 
     const timer = setInterval(() => {
       if (document.hidden || !windowVisible || !loaded) return;
@@ -343,6 +390,7 @@
     // Works from the tray too; defer automatic network work during pressure.
     const updatesTimer = setInterval(() => {
       if (loaded && Date.now() - lastUpdateCheck >= 6 * 60 * 60 * 1000) void checkUpdates(true);
+      void attemptAutomaticInstall();
     }, 60000);
 
     const recover = setInterval(async () => {
@@ -368,8 +416,11 @@
     const resume = () => { documentHidden = document.hidden; };
 
     document.addEventListener('visibilitychange', resume);
+    const interaction = () => { lastInteraction = Date.now(); };
+    document.addEventListener('pointerdown', interaction, true);
+    document.addEventListener('keydown', interaction, true);
 
-    return () => { stop = true; systemPoller?.destroy(); providerPoller?.destroy(); clearTimeout(saveTimer); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); };
+    return () => { stop = true; systemPoller?.destroy(); providerPoller?.destroy(); settingsWriter.destroy(); [timer, recover, updatesTimer].forEach(clearInterval); void updater.dispose(); cleanups.forEach(fn => fn()); document.removeEventListener('visibilitychange', resume); document.removeEventListener('pointerdown', interaction, true); document.removeEventListener('keydown', interaction, true); };
 
   });
 
@@ -458,14 +509,15 @@
         <section class="preferences-panel"><h2>Attention & behaviour</h2><div class="form-grid"><label for="warning">Warn at % remaining<input id="warning" type="number" min="1" max="100" bind:value={settings.warning}/></label><label for="critical">Critical at % remaining<input id="critical" type="number" min="0" max={settings.warning} bind:value={settings.critical}/></label></div><fieldset class="pressure-settings"><legend>Performance pressure thresholds</legend><div class="form-grid"><label for="cpu-pressure">CPU load %<input id="cpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.cpuPercent}/></label><label for="gpu-pressure">GPU load %<input id="gpu-pressure" type="number" min="50" max="100" bind:value={settings.performance.gpuPercent}/></label><label for="ram-pressure">RAM used %<input id="ram-pressure" type="number" min="50" max="100" bind:value={settings.performance.memoryPercent}/></label><label for="temp-pressure">Temperature °C<input id="temp-pressure" type="number" min="40" max="120" bind:value={settings.performance.temperatureCelsius}/></label><label for="drive-pressure">Drive used %<input id="drive-pressure" type="number" min="50" max="100" bind:value={settings.performance.storagePercent}/></label></div><p class="field-hint">! flags sustained CPU/GPU/RAM pressure (10 seconds), high reported temperatures, or low drive space. Hover for the cause. These signals suggest possible slowdown; thermal throttling is not measured. Temperature is unavailable when no sensor is reported.</p></fieldset><label class="toggle" for="adaptive-resources"><input id="adaptive-resources" type="checkbox" bind:checked={settings.resources.adaptive}/><span>Smart resource mode · adapt to system pressure</span></label><p class="field-hint">CPU/GPU/RAM pressure or high reported temperature slows system checks to 4–8 seconds, AI checks to 10–15 seconds, and quiets motion. Recovery needs 20 healthy seconds per step. Drive and route checks are cached longer. Your motion choice returns automatically.</p><label class="toggle" for="reduce-motion"><input id="reduce-motion" type="checkbox" bind:checked={settings.reducedMotion}/><span>Reduce motion · use a static question badge</span></label><label class="toggle" for="notifications"><input id="notifications" type="checkbox" bind:checked={settings.notifications}/><span>Desktop notifications for questions</span></label><label class="toggle" for="autostart"><input id="autostart" type="checkbox" bind:checked={settings.launchAtLogin}/><span>Launch Neon HUD at login</span></label><p class="field-hint">No automatic approvals. A brief shake signals a real question or permission request. System reduced-motion preferences are also respected.</p></section>
         <section class="preferences-panel update-panel"><h2>App updates <small>v{appVersion}</small></h2>
           <label class="toggle" for="auto-updates"><input id="auto-updates" type="checkbox" bind:checked={settings.autoUpdates}/><span>Automatically check and download updates</span></label>
-          <p class="field-hint">Checks GitHub on startup and every 6 hours. Downloads wait during high system pressure. Installation and restart require your click.</p>
+          <label class="toggle" for="auto-install-updates"><input id="auto-install-updates" type="checkbox" disabled={!settings.autoUpdates} bind:checked={settings.autoInstallUpdates}/><span>Automatically install updates and restart</span></label>
+          <p class="field-hint">Checks GitHub on startup and every 6 hours, including from the tray. Signed updates install after a quiet minute when auto-install is on. Settings, open details, pending questions, paused monitoring and high system pressure defer the restart. Turn this off to install manually.</p>
           <p class="update-status" role="status" aria-live="polite">{updateStatus.message}</p>
           {#if updateStatus.phase === 'downloading'}<progress aria-label="Update download" max={updateStatus.total || undefined} value={updateStatus.total ? updateStatus.received || 0 : undefined}></progress><small>{((updateStatus.received || 0) / 1048576).toFixed(1)} MiB{updateStatus.total ? ` / ${(updateStatus.total / 1048576).toFixed(1)} MiB` : ' downloaded'}</small>{/if}
           <div class="update-actions">
             <button class="secondary" disabled={!native || ['checking','downloading','installing'].includes(updateStatus.phase)} onclick={() => checkUpdates()}>Check updates</button>
             {#if updateStatus.phase === 'available' || (updateStatus.phase === 'error' && updater.canDownload)}<button class="primary" onclick={() => updater.download()}>Download update</button>{/if}
-            {#if updateStatus.phase === 'ready' || (updateStatus.phase === 'error' && updater.canInstall)}<button class="primary" onclick={installUpdate}>Install &amp; restart</button>{/if}
-            {#if updateStatus.phase === 'restart'}<button class="primary" onclick={() => invoke('restart_app')}>Restart Neon HUD</button>{/if}
+            {#if updateStatus.phase === 'ready' || (updateStatus.phase === 'error' && updater.canInstall)}<button class="primary" onclick={() => installUpdate()}>Install &amp; restart</button>{/if}
+            {#if updateStatus.phase === 'restart'}<button class="primary" onclick={restart}>Restart Neon HUD</button>{/if}
           </div>
         </section></div>
 

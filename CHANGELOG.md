@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.3] - 2026-10-07
+
+### Added
+
+- Optional automatic installation and restart after verified downloads and a quiet minute, including from the system tray or Mac menu bar.
+- Restart deferrals for settings/details, questions, connection attempts, paused monitoring, unsaved settings and high resource pressure; fresh system/provider preflight before installation.
+
+### Improved
+
+- Preserve older and partial profiles across launches; unreadable settings remain intact instead of being replaced with defaults.
+- Serialize preference writes and flush pending edits before tray Quit or update installation.
+- Minimize hides the Windows window to the tray and removes its taskbar presence. Tray actions restore the current HUD or settings view.
+- Automatic-install failures stop automatic retries and retain the manual recovery control.
+- Disabling automatic checks during an in-flight check prevents the following automatic download.
+- Serialized preference saves prevent an older autosave from clearing a newer pending-save gate. Existing settings migrate with automatic installation off.
+
+### Validation
+
+- Frontend policy, signature, restart, retry, switch-change and migration tests; native preference round-trip and migration tests.
+- Installed upgrade and future-release delivery require runtime evidence; build and fixture results are recorded separately in validation.
+
 ## [0.1.2] - 2026-10-07
 
 ### Added
@@ -93,4 +114,5 @@ First public preview.
 
 [0.1.0]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.0
 [0.1.2]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.2
+[0.1.3]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.3
 [0.1.1]: https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.1

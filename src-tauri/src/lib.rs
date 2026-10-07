@@ -98,7 +98,7 @@ fn replace_file(temp: &std::path::Path, path: &std::path::Path) -> std::io::Resu
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct Settings {
     version: u8,
     completed: bool,
@@ -131,6 +131,8 @@ struct Settings {
     codex_enabled: bool,
     #[serde(default = "default_true")]
     auto_updates: bool,
+    #[serde(default)]
+    auto_install_updates: bool,
 }
 fn default_motion() -> String {
     "chaotic".into()
@@ -145,6 +147,7 @@ fn default_gpu_threshold() -> f64 {
     90.0
 }
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
 struct Metrics {
     cpu: bool,
     #[serde(default = "default_true")]
@@ -155,11 +158,23 @@ struct Metrics {
     #[serde(default = "default_true")]
     storage: bool,
 }
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            cpu: true,
+            gpu: true,
+            ram: true,
+            network: true,
+            ai: true,
+            storage: true,
+        }
+    }
+}
 fn default_true() -> bool {
     true
 }
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 struct Performance {
     cpu_percent: f64,
     #[serde(default = "default_gpu_threshold")]
@@ -180,6 +195,7 @@ impl Default for Performance {
     }
 }
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
 struct Resources {
     #[serde(default = "default_true")]
     adaptive: bool,
@@ -228,16 +244,29 @@ impl Default for Settings {
             resources: Resources::default(),
             codex_enabled: false,
             auto_updates: true,
+            auto_install_updates: false,
         }
     }
 }
+fn read_settings(path: &std::path::Path) -> Result<Settings, String> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Settings::default())
+        }
+        Err(_) => {
+            return Err("Saved profile could not be read; the existing file was retained.".into())
+        }
+    };
+    let mut settings: Settings = serde_json::from_slice(&bytes).map_err(|_| {
+        "Saved profile could not be parsed; the existing file was retained.".to_string()
+    })?;
+    normalize_settings(&mut settings);
+    Ok(settings)
+}
 #[tauri::command]
-fn load_settings(app: AppHandle) -> Settings {
-    data_dir(&app)
-        .ok()
-        .and_then(|p| fs::read(p.join("settings.json")).ok())
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+fn load_settings(app: AppHandle) -> Result<Settings, String> {
+    read_settings(&data_dir(&app)?.join("settings.json"))
 }
 #[tauri::command]
 fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
@@ -321,6 +350,44 @@ fn normalize_settings(settings: &mut Settings) {
 mod settings_tests {
     use super::*;
     #[test]
+    fn partial_legacy_profile_preserves_choices_on_reload() {
+        let restored: Settings = serde_json::from_str(r#"{"completed":true,"theme":"aurora","corner":"bottom-left","launchAtLogin":true,"metrics":{"cpu":false},"performance":{"cpuPercent":75},"resources":{"samplingMs":500}}"#).unwrap();
+        assert!(restored.completed);
+        assert_eq!(restored.theme, "aurora");
+        assert_eq!(restored.corner, "bottom-left");
+        assert!(restored.launch_at_login);
+        assert!(!restored.metrics.cpu);
+        assert!(restored.metrics.gpu);
+        assert_eq!(restored.performance.cpu_percent, 75.0);
+        assert_eq!(restored.performance.memory_percent, 90.0);
+        assert_eq!(restored.resources.sampling_ms, 500);
+        assert!(restored.resources.adaptive);
+        assert!(!restored.auto_install_updates);
+    }
+    #[test]
+    fn saved_profile_round_trips_and_invalid_profile_is_retained() {
+        let path = std::env::temp_dir().join(format!(
+            "neon-profile-test-{}-{}.json",
+            std::process::id(),
+            now()
+        ));
+        let mut settings = Settings::default();
+        settings.completed = true;
+        settings.theme = "cyberpunk".into();
+        settings.corner = "bottom-left".into();
+        settings.auto_install_updates = true;
+        atomic_json(&path, &settings).unwrap();
+        let restored = read_settings(&path).unwrap();
+        assert!(restored.completed);
+        assert_eq!(restored.theme, "cyberpunk");
+        assert_eq!(restored.corner, "bottom-left");
+        assert!(restored.auto_install_updates);
+        fs::write(&path, b"{broken").unwrap();
+        assert!(read_settings(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"{broken");
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn corner_defaults_and_normalizes_to_supported_positions() {
         let mut settings = Settings::default();
         assert_eq!(settings.corner, "middle-right");
@@ -339,6 +406,7 @@ mod settings_tests {
         root.remove("performance");
         root.remove("resources");
         root.remove("gpuId");
+        root.remove("autoInstallUpdates");
         root.get_mut("metrics")
             .unwrap()
             .as_object_mut()
@@ -358,6 +426,18 @@ mod settings_tests {
         assert_eq!(restored.gpu_id, "auto");
         assert_eq!(restored.resources.sampling_ms, 250);
         assert_eq!(restored.performance.gpu_percent, 90.0);
+        assert!(!restored.auto_install_updates);
+    }
+    #[test]
+    fn automatic_install_preference_round_trips_without_enabling_it_for_old_users() {
+        let mut settings = Settings::default();
+        settings.auto_install_updates = true;
+        settings.auto_updates = false;
+        let saved = serde_json::to_value(settings).unwrap();
+        assert_eq!(saved["autoInstallUpdates"], true);
+        let restored: Settings = serde_json::from_value(saved).unwrap();
+        assert!(restored.auto_install_updates);
+        assert!(!restored.auto_updates);
     }
     #[test]
     fn performance_thresholds_and_drive_ids_are_bounded() {
@@ -917,6 +997,21 @@ async fn remove_claude_bridge(app: AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn quit_app(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
+) -> Result<(), String> {
+    let state = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        state.lock().map_err(|e| e.to_string())?.disconnect();
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    app.exit(0);
+    Ok(())
+}
+#[tauri::command]
 async fn restart_app(
     app: AppHandle,
     state: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
@@ -931,24 +1026,17 @@ async fn restart_app(
     app.restart()
 }
 #[tauri::command]
-fn set_preferences(
-    app: AppHandle,
-    launch_at_login: bool,
-    notifications: bool,
-) -> Result<(), String> {
+fn set_preferences(app: AppHandle, launch_at_login: bool) -> Result<(), String> {
+    // The frontend's serialized writer owns the profile, including notifications.
     if launch_at_login {
-        app.autolaunch().enable().map_err(|e| e.to_string())?;
+        app.autolaunch().enable().map_err(|e| e.to_string())
     } else {
-        app.autolaunch().disable().map_err(|e| e.to_string())?;
+        app.autolaunch().disable().map_err(|e| e.to_string())
     }
-    let mut settings = load_settings(app.clone());
-    settings.launch_at_login = launch_at_login;
-    settings.notifications = notifications;
-    save_settings(app, settings)
 }
 #[tauri::command]
 fn notify_attention(app: AppHandle, surfaces: Vec<String>) -> Result<(), String> {
-    if !load_settings(app.clone()).notifications {
+    if !load_settings(app.clone())?.notifications {
         return Ok(());
     }
     let valid: Vec<_> = surfaces
@@ -1013,15 +1101,11 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
-                        if let Some(state) = app.try_state::<Arc<Mutex<codex::CodexState>>>() {
-                            if let Ok(mut codex) = state.lock() {
-                                codex.disconnect();
-                            }
-                        }
-                        app.exit(0);
+                        let _ = app.emit("quit-requested", ());
                     }
                     "show" | "configure" => {
                         if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.unminimize();
                             let _ = win.show();
                             let _ = win.emit("hud-visible", true);
                             let _ = win.set_focus();
@@ -1044,6 +1128,13 @@ pub fn run() {
                 let _ = window.hide();
                 let _ = window.emit("hud-visible", false);
             }
+            if let tauri::WindowEvent::Resized(_) = event {
+                if window.is_minimized().unwrap_or(false) {
+                    let _ = window.set_skip_taskbar(true);
+                    let _ = window.hide();
+                    let _ = window.emit("hud-visible", false);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             load_settings,
@@ -1057,6 +1148,7 @@ pub fn run() {
             install_claude_bridge,
             remove_claude_bridge,
             restart_app,
+            quit_app,
             open_link,
             dismiss_attention
         ])

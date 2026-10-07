@@ -4,9 +4,9 @@ project_path: neon-hud
 
 Objective: Publish a lightweight Windows/Mac neon HUD and installer source, with appearance-first configuration, supported AI quota sources, adaptive resources, stress gradients, release documentation and dual licensing.
 
-Status: v0.1.2 public preview. Frontend checks, independent backend review, Windows/Mac native tests, signed packaging, Windows cloud launch and artifact verification passed. Local visual/native installation waits for shared host admission; installed 0.1.0 remains in place. Priority P1.
+Status: v0.1.2 public preview verified; v0.1.3 automatic installation, retained profiles and minimize-to-tray are implemented. Local checks passed (63 tests, Svelte, frontend build, audit and formatting); independent review identified two bypassed save paths, now routed through the writer. Cloud native checks and signed packages are next. Installed 0.1.0 remains in place pending the shared host's native installation lane. Priority P1.
 
-Next: After shared host admission, reuse the isolated browser profile to inspect the GPU pill and settings, then install the verified Windows update. Check the installed UI, GPU readings and updater. Measure actual frame rate and full-process resource use only when that measurement lane is admitted. A real Claude Code session is still required for provider quota evidence.
+Next: Verify and independently review automatic installation, publish exact-source signed 0.1.3 packages, then upgrade the installed HUD and enable both update preferences when the native installation lane is admitted. Preserve existing settings and Claude connection. The earlier visual grant expired without execution; reuse the retained profile only after renewed admission. GPU accuracy/frame rate and full-process resource measurements need a separate admitted measurement lane.
 
 | Job | Owner | Dependency | Resource | State / acceptance |
 |---|---|---|---|---|

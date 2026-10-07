@@ -2,7 +2,7 @@
 
 A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
 
-[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.2.md)
+[Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.3.md)
 
 ![Tiny pill HUD showing sample readings](docs/assets/pill.png)
 
@@ -57,7 +57,9 @@ Performance targets are under 1% idle CPU and a small full-process memory footpr
 
 ## Application updates
 
-From 0.1.1, Preferences enables automatic update checks at startup and every six hours, including while hidden in the tray. Automatic checks defer during high resource pressure. Available packages download in the background and must pass signature verification before **Install & restart** becomes available. Installation and restart require that button; downloads never trigger an unattended restart. Progress, failures, retry controls and the installed version are visible in Preferences. Disable automatic checks there if desired.
+Preferences enables automatic update checks at startup and every six hours, including while hidden in the tray. Automatic checks defer during high resource pressure. Available packages download in the background and must pass signature verification before installation.
+
+From 0.1.3, enable **Automatically install updates and restart** to authorize future upgrades. A verified package waits at least one minute, with no HUD interaction during the last minute. Open settings or provider details, pending questions, connection attempts, paused monitoring, unsaved preferences and high resource pressure defer the restart. A fresh system/provider preflight also runs from the tray before installation; unavailable readings defer it. Only one preflight per minute runs while a verified package is waiting. Existing users keep automatic installation off until they choose it. Disable either update switch to prevent automatic installation; **Install & restart** remains available manually. An installation failure waits for a manual retry rather than restarting repeatedly.
 
 Updates use the public [`updates/latest.json`](updates/latest.json) manifest and versioned GitHub Release assets. The first 0.1.0 installation must be upgraded with the installer. See [release maintenance](docs/releases/MAINTENANCE.md) for the signed publishing gate.
 

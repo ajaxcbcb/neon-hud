@@ -1,6 +1,6 @@
 [package]
 name = "neon-hud"
-version = "0.1.2"
+version = "0.1.3"
 description = "Local system and AI allowance HUD"
 authors = ["Neon HUD contributors"]
 license = "MIT OR Apache-2.0"

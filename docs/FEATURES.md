@@ -26,8 +26,12 @@ Smart resource mode detects sustained CPU/GPU/RAM pressure and high reported tem
 
 ## Quick controls, simple preferences
 
-Right-click the HUD or press **Shift+F10** to expand, pause/resume, pin, switch theme, quiet motion, refresh, open settings or hide to tray. Arrow keys, Home/End and Esc work in the menu. Settings select GPU, 250–2000ms system sampling, drives, network interface, metrics, thresholds, monitor/corner, text scale, motion and notifications. **Launch Neon HUD at login** defaults off. Closing hides the window; tray/menu-bar **Quit** exits.
+Right-click the HUD or press **Shift+F10** to expand, pause/resume, pin, switch theme, quiet motion, refresh, open settings or hide to tray. Arrow keys, Home/End and Esc work in the menu. Settings select GPU, 250–2000ms system sampling, drives, network interface, metrics, thresholds, monitor/corner, text scale, motion and notifications. **Launch Neon HUD at login** defaults off. Closing or minimizing hides the window to the tray; tray/menu-bar **Quit** saves pending preferences and exits. Profiles migrate across versions, and unreadable files are retained for recovery.
+
+## Updates that wait for a quiet moment
+
+Automatic checks run on startup and every six hours. Enable **Automatically install updates and restart** for signed upgrades after a quiet minute, including from the tray. Settings, pending questions, paused monitoring and high pressure defer installation. Fresh readings are checked before the restart, your preferences survive the upgrade, and manual installation remains available. Automatic installation defaults off for existing users.
 
 ## Local by design
 
-Settings and minimal readings stay in per-user application data. Provider sign-in stays with the installed provider CLI. No passwords, API keys or transcripts are collected. See the [README](../README.md), [validation evidence](VALIDATION.md), [changelog](../CHANGELOG.md) and [preview release notes](releases/v0.1.2.md).
+Settings and minimal readings stay in per-user application data. Provider sign-in stays with the installed provider CLI. No passwords, API keys or transcripts are collected. See the [README](../README.md), [validation evidence](VALIDATION.md), [changelog](../CHANGELOG.md) and [preview release notes](releases/v0.1.3.md).

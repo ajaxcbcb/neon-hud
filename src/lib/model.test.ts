@@ -11,6 +11,13 @@ describe('settings and measurement boundaries', () => {
     expect(value.theme).toBe('circuit'); expect(value.opacity).toBe(.85);
     expect(value.textScale).toBe(1.15); expect(value.critical).toBe(5); expect(value.completed).toBe(false);
   });
+  it('migrates automatic installation as opt-in and preserves independent update switches', () => {
+    expect(normalizeSettings({}).autoInstallUpdates).toBe(false);
+    expect(normalizeSettings({ autoInstallUpdates: 'yes' }).autoInstallUpdates).toBe(false);
+    const settings = normalizeSettings({ autoInstallUpdates: true, autoUpdates: false });
+    expect(settings.autoInstallUpdates).toBe(true);
+    expect(settings.autoUpdates).toBe(false);
+  });
   it('does not invent reset times or fresh readings', () => {
     expect(countdown(null, 10)).toBe('Reset not reported');
     expect(countdown(5, 10)).toBe('Awaiting refresh');
