@@ -56,7 +56,8 @@ impl NativeBackend {
         super::normalize_settings(&mut settings);
         // Connect/Disconnect alone own enabled intent. A queued whole-profile
         // edit with an older UI snapshot must not silently undo it.
-        settings.codex_enabled = read_settings(&self.config_dir.join("settings.json"))?.codex_enabled;
+        settings.codex_enabled =
+            read_settings(&self.config_dir.join("settings.json"))?.codex_enabled;
         atomic_json(&self.config_dir.join("settings.json"), &settings)
     }
 
@@ -75,7 +76,9 @@ impl NativeBackend {
             "ChatGPT chat allowance is unavailable through a supported local source.",
         )];
         usages.push(self.codex.usage());
-        if !self.preview { let _ = bridge::restore_relocated(&self.bridge_dir); }
+        if !self.preview {
+            let _ = bridge::restore_relocated(&self.bridge_dir);
+        }
         let (claude, attention) = bridge::read_provider(&self.bridge_dir);
         usages.push(claude.clone());
         usages.push(Usage {
@@ -92,14 +95,18 @@ impl NativeBackend {
     }
 
     pub fn connect_codex(&mut self, login: bool) -> Result<String, String> {
-        if self.preview { return Err("Connections are disabled in native preview".into()); }
+        if self.preview {
+            return Err("Connections are disabled in native preview".into());
+        }
         self.persist_codex_enabled(true)?;
         self.codex
             .connect_enabled(login, |url| open::that(url).map_err(|e| e.to_string()))
     }
 
     pub fn disconnect_codex(&mut self) -> Result<(), String> {
-        if self.preview { return Err("Connections are disabled in native preview".into()); }
+        if self.preview {
+            return Err("Connections are disabled in native preview".into());
+        }
         self.persist_codex_enabled(false)?;
         self.codex.set_enabled(false);
         Ok(())
@@ -171,7 +178,9 @@ mod tests {
     #[test]
     fn codex_intent_restores_and_stale_profile_save_cannot_clear_it() {
         let dir = std::env::temp_dir().join(format!(
-            "neon-native-intent-{}-{}", std::process::id(), super::super::now().to_bits()
+            "neon-native-intent-{}-{}",
+            std::process::id(),
+            super::super::now().to_bits()
         ));
         let backend = NativeBackend::new(dir.clone()).unwrap();
         backend.persist_codex_enabled(true).unwrap();
@@ -190,7 +199,9 @@ mod tests {
     #[test]
     fn corrupt_profile_is_not_overwritten_by_connection_intent() {
         let dir = std::env::temp_dir().join(format!(
-            "neon-native-corrupt-{}-{}", std::process::id(), super::super::now().to_bits()
+            "neon-native-corrupt-{}-{}",
+            std::process::id(),
+            super::super::now().to_bits()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.json");
@@ -198,8 +209,11 @@ mod tests {
         // Construct without loading the corrupt profile to exercise the
         // persistence guard directly; startup itself must also fail closed.
         let backend = NativeBackend {
-            config_dir: dir.clone(), bridge_dir: dir.clone(), preview: false,
-            monitor: SystemMonitor::new(), codex: CodexState::default(),
+            config_dir: dir.clone(),
+            bridge_dir: dir.clone(),
+            preview: false,
+            monitor: SystemMonitor::new(),
+            codex: CodexState::default(),
         };
         assert!(backend.persist_codex_enabled(true).is_err());
         assert!(NativeBackend::new(dir.clone()).is_err());

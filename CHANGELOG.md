@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — native Nook
+
+- Native black capsule with hover peek, click expansion, pinning, Escape dismissal and inward screen placement. The floating pill remains selectable and retains its saved position.
+- Instruments and AI tabs retain numerical system readings, gradient stress bars, history, five-hour reset windows and measured allowance drain. Local notes, tasks, deadline timers and file references use separate bounded, recoverable storage.
+- Saved Codex connection intent and last-known allowance survive retry failures. Stale readings show their original timestamp and connection state; explicit disconnect clears them.
+- Bridge migration recognises owned Windows version folders and macOS versioned app bundles while preserving foreign Claude configuration.
+- Added source regressions for timer state retention, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls and native frame captures. Reference playback, integrated validation and target installation remain pending; this section is not a published-release claim.
+
 ## [0.2.0-alpha.4] - 2026-10-07
 
 - The Download update action stays visible and disabled while an update operation runs. Hovering identifies the signed release version, and the status and activity indicator show progress.

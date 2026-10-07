@@ -41,7 +41,9 @@ impl Default for CodexState {
     }
 }
 impl CodexState {
-    pub fn is_enabled(&self) -> bool { self.enabled }
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
     pub fn restore_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
         self.retry_after = if enabled { Some(Instant::now()) } else { None };
@@ -68,8 +70,12 @@ impl CodexState {
             }
         } else {
             Usage {
-                surface: "codex".into(), source: "Codex app-server".into(),
-                state: "unknown".into(), message: error.into(), fetched_at: None, windows: vec![],
+                surface: "codex".into(),
+                source: "Codex app-server".into(),
+                state: "unknown".into(),
+                message: error.into(),
+                fetched_at: None,
+                windows: vec![],
             }
         };
         self.retry_after = Some(Instant::now() + self.retry_delay);
@@ -82,7 +88,8 @@ impl CodexState {
         }
     }
     pub fn connect_enabled<F>(&mut self, login: bool, open_url: F) -> Result<String, String>
-    where F: FnOnce(&str) -> Result<(), String>,
+    where
+        F: FnOnce(&str) -> Result<(), String>,
     {
         self.set_enabled(true);
         let result = self.connect(login, open_url);
@@ -278,11 +285,19 @@ impl CodexState {
     }
     pub fn usage(&mut self) -> Usage {
         if self.enabled {
-            if self.child.as_mut().is_some_and(|child| child.try_wait().ok().flatten().is_some()) {
+            if self
+                .child
+                .as_mut()
+                .is_some_and(|child| child.try_wait().ok().flatten().is_some())
+            {
                 self.disconnect();
                 self.retry_later("Codex helper exited; retry pending.");
             }
-            if self.child.is_none() && self.retry_after.is_none_or(|deadline| Instant::now() >= deadline) {
+            if self.child.is_none()
+                && self
+                    .retry_after
+                    .is_none_or(|deadline| Instant::now() >= deadline)
+            {
                 match self.connect(false, |_| Err("Automatic login is disabled".into())) {
                     Ok(_) => {}
                     Err(error) => {
@@ -300,8 +315,14 @@ impl CodexState {
             if self.usage.state == "needs-login" {
                 self.last = Some(Instant::now());
                 match self.request("account/read", json!({"refreshToken":false})) {
-                    Ok(value) if value.get("account").is_some_and(|account| !account.is_null()) => {
-                        if let Err(error) = self.refresh() { self.refresh_failed(&error); }
+                    Ok(value)
+                        if value
+                            .get("account")
+                            .is_some_and(|account| !account.is_null()) =>
+                    {
+                        if let Err(error) = self.refresh() {
+                            self.refresh_failed(&error);
+                        }
                     }
                     Ok(_) => {}
                     Err(error) if self.enabled => {
@@ -311,7 +332,9 @@ impl CodexState {
                     Err(_) => {}
                 }
             } else {
-                if let Err(error) = self.refresh() { self.refresh_failed(&error); }
+                if let Err(error) = self.refresh() {
+                    self.refresh_failed(&error);
+                }
             }
         }
         self.usage.clone()
@@ -404,7 +427,9 @@ mod tests {
         codex.restore_enabled(true);
         assert!(codex.enabled);
         assert!(codex.retry_after.is_some());
-        for _ in 0..10 { codex.retry_later("synthetic failure"); }
+        for _ in 0..10 {
+            codex.retry_later("synthetic failure");
+        }
         assert_eq!(codex.retry_delay, Duration::from_secs(300));
         assert_eq!(codex.usage.state, "unknown");
         codex.set_enabled(false);
@@ -432,12 +457,16 @@ mod tests {
         let mut codex = CodexState::default();
         codex.restore_enabled(true);
         let sample = Usage {
-            surface: "codex".into(), source: "Codex app-server".into(),
-            state: "connected".into(), message: "Codex account allowance".into(),
+            surface: "codex".into(),
+            source: "Codex app-server".into(),
+            state: "connected".into(),
+            message: "Codex account allowance".into(),
             fetched_at: Some(1234.0),
             windows: vec![UsageWindow {
-                label: "5 hours".into(), minutes: 300,
-                used_percent: 42.0, resets_at: Some(2000.0),
+                label: "5 hours".into(),
+                minutes: 300,
+                used_percent: 42.0,
+                resets_at: Some(2000.0),
             }],
         };
         codex.usage = sample.clone();

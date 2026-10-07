@@ -55,8 +55,9 @@ impl Worker {
                     }
                     Command::Connect(login) => send(Event::Action(core.connect_codex(login))),
                     Command::Disconnect => {
-                        send(Event::Action(core.disconnect_codex()
-                            .map(|_| "Codex disconnected".into())));
+                        send(Event::Action(
+                            core.disconnect_codex().map(|_| "Codex disconnected".into()),
+                        ));
                     }
                     Command::Claude(true) => send(Event::Action(core.install_claude_bridge())),
                     Command::Claude(false) => send(Event::Action(core.remove_claude_bridge())),

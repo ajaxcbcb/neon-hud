@@ -35,6 +35,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: native-${{ github.head_ref || github.ref_name }}-${{ inputs.proof && 'proof' || inputs.publish && 'publish' || 'checks' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 jobs:
   installed-update:
     if: github.event_name == 'workflow_dispatch' && inputs.proof

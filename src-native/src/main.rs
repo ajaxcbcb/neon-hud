@@ -43,13 +43,19 @@ fn main() -> eframe::Result<()> {
     let smoke = args.iter().any(|a| a == "--smoke");
     let smoke_nook = smoke && args.iter().any(|a| a == "--smoke-nook");
     let smoke_nook_tab = if smoke_nook {
-        args.iter().find_map(|arg| arg.strip_prefix("--smoke-nook-tab=")
-            .and_then(|value| value.parse::<usize>().ok())).map(|tab| tab.min(5))
-    } else { None };
+        args.iter()
+            .find_map(|arg| {
+                arg.strip_prefix("--smoke-nook-tab=")
+                    .and_then(|value| value.parse::<usize>().ok())
+            })
+            .map(|tab| tab.min(5))
+    } else {
+        None
+    };
     let smoke_interaction = smoke
-        && args
-            .iter()
-            .any(|a| a == "--smoke-hover" || a == "--smoke-menu" || a == "--smoke-nook-interaction");
+        && args.iter().any(|a| {
+            a == "--smoke-hover" || a == "--smoke-menu" || a == "--smoke-nook-interaction"
+        });
     let smoke_page = args
         .iter()
         .find_map(|a| {
@@ -420,7 +426,9 @@ impl App {
         self.resize(ctx);
     }
     fn resize(&self, ctx: &egui::Context) {
-        if self.is_nook() { return; }
+        if self.is_nook() {
+            return;
+        }
         let width = if text(&self.profile, "size") == "compressed" {
             160.
         } else {
@@ -485,7 +493,9 @@ impl App {
                             self.position_hold = Instant::now() + Duration::from_millis(350);
                         }
                     }
-                    if !self.smoke { self.settings |= !flag(&self.profile, "completed"); }
+                    if !self.smoke {
+                        self.settings |= !flag(&self.profile, "completed");
+                    }
                     // Preview launch never enables connectors or startup automatically.
                 }
                 Event::Loaded(Err(e)) => {
@@ -612,8 +622,11 @@ impl App {
             match event {
                 productivity::ControllerEvent::Loaded { recovered, warning } => {
                     self.productivity_status = warning.unwrap_or_else(|| {
-                        if recovered { "Nook utilities recovered from backup".into() }
-                        else { "Saved locally".into() }
+                        if recovered {
+                            "Nook utilities recovered from backup".into()
+                        } else {
+                            "Saved locally".into()
+                        }
                     });
                 }
                 productivity::ControllerEvent::LoadFailed(error) => {
@@ -683,7 +696,8 @@ impl App {
             if let Some(controller) = &mut self.productivity {
                 if !controller.loading() && !controller.stop_requested() {
                     if let Err(error) = controller.request_stop() {
-                        self.productivity_status = format!("Could not save Nook utilities: {error}");
+                        self.productivity_status =
+                            format!("Could not save Nook utilities: {error}");
                         self.quitting = false;
                         self.applying_update = false;
                         self.settings = true;
@@ -1383,16 +1397,28 @@ impl App {
         });
         ui.separator();
         if self.preferences_tab == 0 {
-            ui.add_enabled_ui(self.productivity.as_ref().is_some_and(|c| c.writable()), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("HUD layout");
-                    for (mode, label) in [(nook::PresentationMode::Nook, "Nook"), (nook::PresentationMode::Pill, "Floating pill")] {
-                        if ui.selectable_label(self.is_nook() == (mode == nook::PresentationMode::Nook), label).clicked() {
-                            self.set_presentation(mode, ctx);
+            ui.add_enabled_ui(
+                self.productivity.as_ref().is_some_and(|c| c.writable()),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("HUD layout");
+                        for (mode, label) in [
+                            (nook::PresentationMode::Nook, "Nook"),
+                            (nook::PresentationMode::Pill, "Floating pill"),
+                        ] {
+                            if ui
+                                .selectable_label(
+                                    self.is_nook() == (mode == nook::PresentationMode::Nook),
+                                    label,
+                                )
+                                .clicked()
+                            {
+                                self.set_presentation(mode, ctx);
+                            }
                         }
-                    }
-                });
-            });
+                    });
+                },
+            );
             self.metrics(ui);
             ui.separator();
             ui.horizontal(|ui| {
@@ -2185,7 +2211,13 @@ impl App {
                         ];
                         let short_labels = [
                             "Settings",
-                            if self.is_nook() { "Collapse" } else if compact { "Expand" } else { "Compress" },
+                            if self.is_nook() {
+                                "Collapse"
+                            } else if compact {
+                                "Expand"
+                            } else {
+                                "Compress"
+                            },
                             if self.paused { "Resume" } else { "Pause" },
                             "Hide",
                             "Reset",
@@ -2217,10 +2249,16 @@ impl App {
                                     1 => self.compress(ctx),
                                     2 => self.paused = !self.paused,
                                     3 => self.hide(ctx),
-                                    4 => if self.is_nook() { self.reset_nook(ctx); } else {
-                                        ctx.send_viewport_cmd_to(ViewportId::ROOT,
-                                            ViewportCommand::OuterPosition(Pos2::new(60., 60.)));
-                                    },
+                                    4 => {
+                                        if self.is_nook() {
+                                            self.reset_nook(ctx);
+                                        } else {
+                                            ctx.send_viewport_cmd_to(
+                                                ViewportId::ROOT,
+                                                ViewportCommand::OuterPosition(Pos2::new(60., 60.)),
+                                            );
+                                        }
+                                    }
                                     5 => self.quitting = true,
                                     _ => unreachable!(),
                                 }
@@ -2371,14 +2409,25 @@ impl eframe::App for App {
             self.hidden,
         );
         ctx.request_repaint_after(Duration::from_millis(interval));
-        if self.busy || self.save_pending || self.quitting || self.update_busy
-            || self.productivity.as_ref().is_some_and(|c| c.needs_repaint()) {
+        if self.busy
+            || self.save_pending
+            || self.quitting
+            || self.update_busy
+            || self
+                .productivity
+                .as_ref()
+                .is_some_and(|c| c.needs_repaint())
+        {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
         if let Some(controller) = &self.productivity {
             if let productivity::Timer::Running { .. } = controller.state.timer {
                 let remaining = controller.state.timer.remaining_ms((now() * 1000.) as i64);
-                let wake = if self.hidden { remaining.max(1) } else { remaining.clamp(1, 1000) };
+                let wake = if self.hidden {
+                    remaining.max(1)
+                } else {
+                    remaining.clamp(1, 1000)
+                };
                 ctx.request_repaint_after(Duration::from_millis(wake as u64));
             }
         }

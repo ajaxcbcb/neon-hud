@@ -231,7 +231,8 @@ fn statusline_command_parts(command: &str) -> Option<(PathBuf, Option<String>)> 
     if !name.eq_ignore_ascii_case("neon-hud")
         && !name.eq_ignore_ascii_case("neon-hud.exe")
         && !name.eq_ignore_ascii_case("neon-hud-native")
-        && !name.eq_ignore_ascii_case("neon-hud-native.exe") {
+        && !name.eq_ignore_ascii_case("neon-hud-native.exe")
+    {
         return None;
     }
     let parts: Vec<_> = args.split_whitespace().collect();
@@ -315,53 +316,88 @@ fn same_executable(path: &Path, owner: &Path) -> bool {
     }
 }
 fn same_install_lineage(recorded: &Path, current: &Path) -> bool {
-    if !recorded.is_absolute() || !current.is_absolute() { return false; }
+    if !recorded.is_absolute() || !current.is_absolute() {
+        return false;
+    }
     fn version_prefix(dir: &str) -> Option<&str> {
         let index = dir.find(|c: char| c.is_ascii_digit())?;
         let suffix = &dir[index..];
         if !suffix.chars().any(|c| c.is_ascii_digit())
-            || !suffix.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+')) {
+            || !suffix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+        {
             return None;
         }
         Some(dir[..index].trim_end_matches(['-', '_', ' ']))
     }
     fn app_bundle(exe: &Path) -> Option<&Path> {
         let macos = exe.parent()?;
-        if macos.file_name()?.to_str()? != "MacOS" { return None; }
+        if macos.file_name()?.to_str()? != "MacOS" {
+            return None;
+        }
         let contents = macos.parent()?;
-        if contents.file_name()?.to_str()? != "Contents" { return None; }
+        if contents.file_name()?.to_str()? != "Contents" {
+            return None;
+        }
         let bundle = contents.parent()?;
-        if bundle.extension()?.to_str()? != "app" { return None; }
+        if bundle.extension()?.to_str()? != "app" {
+            return None;
+        }
         Some(bundle)
     }
     if let (Some(old_bundle), Some(new_bundle)) = (app_bundle(recorded), app_bundle(current)) {
         let (Some(old_root), Some(new_root)) = (old_bundle.parent(), new_bundle.parent()) else {
             return false;
         };
-        if !same_executable(old_root, new_root) { return false; }
-        let (Some(old_name), Some(new_name)) = (old_bundle.file_name(), new_bundle.file_name()) else {
+        if !same_executable(old_root, new_root) {
+            return false;
+        }
+        let (Some(old_name), Some(new_name)) = (old_bundle.file_name(), new_bundle.file_name())
+        else {
             return false;
         };
-        let (old_name, new_name) = (old_name.to_string_lossy().to_ascii_lowercase(), new_name.to_string_lossy().to_ascii_lowercase());
+        let (old_name, new_name) = (
+            old_name.to_string_lossy().to_ascii_lowercase(),
+            new_name.to_string_lossy().to_ascii_lowercase(),
+        );
         return matches!((version_prefix(&old_name), version_prefix(&new_name)),
             (Some(old), Some(new)) if old == new && (old.contains("neon-hud") || old.contains("neon hud")));
     }
-    let Some(old_parent) = recorded.parent() else { return false; };
-    let Some(new_parent) = current.parent() else { return false; };
-    if same_executable(old_parent, new_parent) { return true; }
+    let Some(old_parent) = recorded.parent() else {
+        return false;
+    };
+    let Some(new_parent) = current.parent() else {
+        return false;
+    };
+    if same_executable(old_parent, new_parent) {
+        return true;
+    }
     let (Some(old_root), Some(new_root)) = (old_parent.parent(), new_parent.parent()) else {
         return false;
     };
-    if !same_executable(old_root, new_root) { return false; }
+    if !same_executable(old_root, new_root) {
+        return false;
+    }
     let (Some(old_dir), Some(new_dir)) = (old_parent.file_name(), new_parent.file_name()) else {
         return false;
     };
-    let (old_dir, new_dir) = (old_dir.to_string_lossy().to_ascii_lowercase(), new_dir.to_string_lossy().to_ascii_lowercase());
-    let (Some(old_prefix), Some(new_prefix)) = (version_prefix(&old_dir), version_prefix(&new_dir)) else {
+    let (old_dir, new_dir) = (
+        old_dir.to_string_lossy().to_ascii_lowercase(),
+        new_dir.to_string_lossy().to_ascii_lowercase(),
+    );
+    let (Some(old_prefix), Some(new_prefix)) = (version_prefix(&old_dir), version_prefix(&new_dir))
+    else {
         return false;
     };
-    if old_prefix != new_prefix { return false; }
-    let root_name = old_root.file_name().and_then(|name| name.to_str()).unwrap_or_default().to_ascii_lowercase();
+    if old_prefix != new_prefix {
+        return false;
+    }
+    let root_name = old_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     let product_root = root_name.contains("neon-hud") || root_name.contains("neon hud");
     product_root || old_prefix.contains("neon-hud") || old_prefix.contains("neon hud")
 }
@@ -440,7 +476,10 @@ pub fn is_enabled() -> bool {
 /// executable or a proven version sibling. A foreign or partial configuration is data,
 /// not an instruction to enable the bridge.
 fn relocated_settings(
-    settings: Value, manifest: &Value, current: &Path, eligible: bool,
+    settings: Value,
+    manifest: &Value,
+    current: &Path,
+    eligible: bool,
 ) -> Result<Option<(Value, Value)>, String> {
     let Some(recorded) = manifest.get("installedExecutable").and_then(Value::as_str) else {
         return Ok(None);
@@ -449,7 +488,8 @@ fn relocated_settings(
     if !eligible || !recorded.is_absolute() || same_executable(&recorded, current) {
         return Ok(None);
     }
-    let previous = manifest.get("previousStatusLine")
+    let previous = manifest
+        .get("previousStatusLine")
         .and_then(|value| value.get("command"))
         .and_then(Value::as_str);
     let mut updated_manifest = manifest.clone();
@@ -467,9 +507,15 @@ fn relocated_settings(
         return Ok(None);
     }
     let status = executable_command_for(current, "statusline", previous)?;
-    let commands: Vec<_> = BRIDGE_EVENTS.iter().map(|event| {
-        Ok(((*event).to_string(), executable_command_for(current, &format!("hook {event}"), None)?))
-    }).collect::<Result<_, String>>()?;
+    let commands: Vec<_> = BRIDGE_EVENTS
+        .iter()
+        .map(|event| {
+            Ok((
+                (*event).to_string(),
+                executable_command_for(current, &format!("hook {event}"), None)?,
+            ))
+        })
+        .collect::<Result<_, String>>()?;
     let updated_settings = merge(strip(settings, &[recorded]), &status, &commands)?;
     updated_manifest["installedExecutable"] = json!(current);
     Ok(Some((updated_settings, updated_manifest)))
@@ -477,10 +523,13 @@ fn relocated_settings(
 
 pub fn restore_relocated(dir: &Path) -> Result<bool, String> {
     let manifest_path = dir.join("claude-bridge-manifest.json");
-    if !manifest_path.exists() { return Ok(false); }
+    if !manifest_path.exists() {
+        return Ok(false);
+    }
     let manifest = read_settings(&manifest_path)?;
     let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    let eligible = manifest.get("installedExecutable")
+    let eligible = manifest
+        .get("installedExecutable")
         .and_then(Value::as_str)
         .is_some_and(|path| {
             let recorded = Path::new(path);
@@ -489,10 +538,13 @@ pub fn restore_relocated(dir: &Path) -> Result<bool, String> {
     let settings_path = settings_path()?;
     let settings = read_settings(&settings_path)?;
     let Some((updated_settings, updated_manifest)) =
-        relocated_settings(settings.clone(), &manifest, &current, eligible)? else {
-            return Ok(false);
-        };
-    if updated_settings != settings { atomic_json(&settings_path, &updated_settings)?; }
+        relocated_settings(settings.clone(), &manifest, &current, eligible)?
+    else {
+        return Ok(false);
+    };
+    if updated_settings != settings {
+        atomic_json(&settings_path, &updated_settings)?;
+    }
     atomic_json(&manifest_path, &updated_manifest)?;
     Ok(true)
 }
@@ -961,8 +1013,11 @@ pub fn dismiss(dir: &Path, id: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     fn abs(path: &str) -> PathBuf {
-        if cfg!(windows) { PathBuf::from(format!("C:{path}")) }
-        else { PathBuf::from(path) }
+        if cfg!(windows) {
+            PathBuf::from(format!("C:{path}"))
+        } else {
+            PathBuf::from(path)
+        }
     }
     fn temp_dir() -> PathBuf {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1024,32 +1079,58 @@ mod tests {
         let previous = json!({"type":"command","command":"foreign status"});
         let manifest = json!({"installedExecutable":old,"previousStatusLine":previous});
         let status = executable_command_for(&old, "statusline", Some("foreign status")).unwrap();
-        let hooks: Vec<_> = BRIDGE_EVENTS.iter().map(|event| (
-            (*event).into(), executable_command_for(&old, &format!("hook {event}"), None).unwrap()
-        )).collect();
+        let hooks: Vec<_> = BRIDGE_EVENTS
+            .iter()
+            .map(|event| {
+                (
+                    (*event).into(),
+                    executable_command_for(&old, &format!("hook {event}"), None).unwrap(),
+                )
+            })
+            .collect();
         let settings = merge(json!({"theme":"dark","hooks":{"Stop":[{"hooks":[{"type":"command","command":"foreign hook"}]}]}}),
             &status, &hooks).unwrap();
-        let (updated, updated_manifest) = relocated_settings(settings.clone(), &manifest, &current, true)
-            .unwrap().unwrap();
+        let (updated, updated_manifest) =
+            relocated_settings(settings.clone(), &manifest, &current, true)
+                .unwrap()
+                .unwrap();
         assert!(settings_bridge_enabled(&updated, &current));
         assert!(!settings_bridge_enabled(&updated, &old));
         assert_eq!(updated["theme"], "dark");
-        assert_eq!(updated["hooks"]["Stop"][0]["hooks"][0]["command"], "foreign hook");
+        assert_eq!(
+            updated["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "foreign hook"
+        );
         assert_eq!(updated_manifest["previousStatusLine"], previous);
         assert_eq!(updated_manifest["installedExecutable"], json!(current));
         let (_, resumed_manifest) = relocated_settings(updated, &manifest, &current, true)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(resumed_manifest["installedExecutable"], json!(current));
-        assert!(relocated_settings(settings.clone(), &manifest, &current, false).unwrap().is_none());
+        assert!(
+            relocated_settings(settings.clone(), &manifest, &current, false)
+                .unwrap()
+                .is_none()
+        );
         let mut foreign = settings;
         foreign["statusLine"]["command"] = json!("foreign status");
-        assert!(relocated_settings(foreign, &manifest, &current, true).unwrap().is_none());
+        assert!(relocated_settings(foreign, &manifest, &current, true)
+            .unwrap()
+            .is_none());
         let unrelated_status = executable_command_for(&current, "statusline", None).unwrap();
-        let unrelated_hooks: Vec<_> = BRIDGE_EVENTS.iter().map(|event| (
-            (*event).into(), executable_command_for(&current, &format!("hook {event}"), None).unwrap()
-        )).collect();
+        let unrelated_hooks: Vec<_> = BRIDGE_EVENTS
+            .iter()
+            .map(|event| {
+                (
+                    (*event).into(),
+                    executable_command_for(&current, &format!("hook {event}"), None).unwrap(),
+                )
+            })
+            .collect();
         let other_install = merge(json!({}), &unrelated_status, &unrelated_hooks).unwrap();
-        assert!(relocated_settings(other_install, &manifest, &current, true).unwrap().is_none());
+        assert!(relocated_settings(other_install, &manifest, &current, true)
+            .unwrap()
+            .is_none());
     }
     #[test]
     fn retained_old_version_migrates_only_with_full_manifest_ownership() {
@@ -1058,17 +1139,39 @@ mod tests {
         assert!(same_install_lineage(&old, &current));
         let manifest = json!({"installedExecutable":old,"previousStatusLine":null});
         let status = executable_command_for(&old, "statusline", None).unwrap();
-        let hooks: Vec<_> = BRIDGE_EVENTS.iter().map(|event| (
-            (*event).into(), executable_command_for(&old, &format!("hook {event}"), None).unwrap()
-        )).collect();
-        let settings = merge(json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":"foreign hook"}]}]}}), &status, &hooks).unwrap();
-        let (updated, _) = relocated_settings(settings.clone(), &manifest, &current,
-            same_install_lineage(&old, &current)).unwrap().unwrap();
+        let hooks: Vec<_> = BRIDGE_EVENTS
+            .iter()
+            .map(|event| {
+                (
+                    (*event).into(),
+                    executable_command_for(&old, &format!("hook {event}"), None).unwrap(),
+                )
+            })
+            .collect();
+        let settings = merge(
+            json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":"foreign hook"}]}]}}),
+            &status,
+            &hooks,
+        )
+        .unwrap();
+        let (updated, _) = relocated_settings(
+            settings.clone(),
+            &manifest,
+            &current,
+            same_install_lineage(&old, &current),
+        )
+        .unwrap()
+        .unwrap();
         assert!(settings_bridge_enabled(&updated, &current));
-        assert_eq!(updated["hooks"]["Stop"][0]["hooks"][0]["command"], "foreign hook");
+        assert_eq!(
+            updated["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "foreign hook"
+        );
         let mut foreign = settings;
         foreign["statusLine"]["command"] = json!("foreign status");
-        assert!(relocated_settings(foreign, &manifest, &current, true).unwrap().is_none());
+        assert!(relocated_settings(foreign, &manifest, &current, true)
+            .unwrap()
+            .is_none());
     }
     #[test]
     fn distinct_live_installation_has_no_migration_lineage() {
@@ -1086,21 +1189,45 @@ mod tests {
         assert!(same_install_lineage(&old, &current));
         let manifest = json!({"installedExecutable":old,"previousStatusLine":null});
         let status = executable_command_for(&old, "statusline", None).unwrap();
-        let hooks: Vec<_> = BRIDGE_EVENTS.iter().map(|event| (
-            (*event).into(), executable_command_for(&old, &format!("hook {event}"), None).unwrap()
-        )).collect();
-        let settings = merge(json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":"foreign hook"}]}]}}), &status, &hooks).unwrap();
-        let (updated, _) = relocated_settings(settings.clone(), &manifest, &current,
-            same_install_lineage(&old, &current)).unwrap().unwrap();
+        let hooks: Vec<_> = BRIDGE_EVENTS
+            .iter()
+            .map(|event| {
+                (
+                    (*event).into(),
+                    executable_command_for(&old, &format!("hook {event}"), None).unwrap(),
+                )
+            })
+            .collect();
+        let settings = merge(
+            json!({"hooks":{"Stop":[{"hooks":[{"type":"command","command":"foreign hook"}]}]}}),
+            &status,
+            &hooks,
+        )
+        .unwrap();
+        let (updated, _) = relocated_settings(
+            settings.clone(),
+            &manifest,
+            &current,
+            same_install_lineage(&old, &current),
+        )
+        .unwrap()
+        .unwrap();
         assert!(settings_bridge_enabled(&updated, &current));
-        assert_eq!(updated["hooks"]["Stop"][0]["hooks"][0]["command"], "foreign hook");
+        assert_eq!(
+            updated["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "foreign hook"
+        );
         let foreign = abs("/Applications/Other HUD 1.5.app/Contents/MacOS/neon-hud");
         assert!(!same_install_lineage(&old, &foreign));
         let separate = abs("/Another/Neon HUD 1.5.app/Contents/MacOS/neon-hud");
         assert!(!same_install_lineage(&old, &separate));
         let mut foreign_settings = settings;
         foreign_settings["statusLine"]["command"] = json!("foreign status");
-        assert!(relocated_settings(foreign_settings, &manifest, &current, true).unwrap().is_none());
+        assert!(
+            relocated_settings(foreign_settings, &manifest, &current, true)
+                .unwrap()
+                .is_none()
+        );
     }
     #[test]
     fn manifest_restores_foreign_status_without_touching_other_settings() {
