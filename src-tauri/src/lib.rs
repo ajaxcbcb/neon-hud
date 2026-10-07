@@ -1,6 +1,8 @@
 mod bridge;
 mod codex;
 mod gpu;
+pub mod native_api;
+pub use native_api::run_bridge_cli;
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,13 +16,17 @@ use std::{
 use sysinfo::{
     Components, CpuRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind, System,
 };
+#[cfg(feature = "desktop-webview")]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager,
 };
+#[cfg(feature = "desktop-webview")]
 use tauri_plugin_autostart::ManagerExt;
+#[cfg(feature = "desktop-webview")]
 use tauri_plugin_notification::NotificationExt;
+#[cfg(feature = "desktop-webview")]
 use tauri_plugin_opener::OpenerExt;
 
 fn now() -> f64 {
@@ -29,6 +35,7 @@ fn now() -> f64 {
         .unwrap_or_default()
         .as_secs_f64()
 }
+#[cfg(feature = "desktop-webview")]
 fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_config_dir().map_err(|e| e.to_string())
 }
@@ -273,10 +280,12 @@ fn read_settings(path: &std::path::Path) -> Result<Settings, String> {
     normalize_settings(&mut settings);
     Ok(settings)
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 fn load_settings(app: AppHandle) -> Result<Settings, String> {
     read_settings(&data_dir(&app)?.join("settings.json"))
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     let mut settings = settings;
@@ -917,6 +926,7 @@ impl SystemMonitor {
             .map_err(|error| format!("System monitor did not respond: {error}"))
     }
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn system_snapshot(
     app: AppHandle,
@@ -976,12 +986,14 @@ struct ProviderSnapshot {
     attention: Vec<Attention>,
     claude_bridge_enabled: bool,
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn provider_snapshot(
     app: AppHandle,
     codex: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
 ) -> Result<ProviderSnapshot, String> {
     let codex = Arc::clone(codex.inner());
+    let dir = data_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut usages = vec![Usage::unavailable(
             "chatgpt",
@@ -991,7 +1003,7 @@ async fn provider_snapshot(
         usages.push(codex.lock().map(|mut c| c.usage()).unwrap_or_else(|_| {
             Usage::unavailable("codex", "Codex app-server", "Reader unavailable")
         }));
-        let (claude, attention) = bridge::read_provider(&app);
+        let (claude, attention) = bridge::read_provider(&dir);
         usages.push(claude.clone());
         usages.push(Usage {
             surface: "claude-code".into(),
@@ -1001,12 +1013,13 @@ async fn provider_snapshot(
         ProviderSnapshot {
             usages,
             attention,
-            claude_bridge_enabled: bridge::is_enabled(&app),
+            claude_bridge_enabled: bridge::is_enabled(),
         }
     })
     .await
     .map_err(|e| e.to_string())
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn connect_codex(
     app: AppHandle,
@@ -1018,11 +1031,12 @@ async fn connect_codex(
         state
             .lock()
             .map_err(|e| e.to_string())?
-            .connect(&app, login.unwrap_or(true))
+            .connect(login.unwrap_or(true), |url| app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string()))
     })
     .await
     .map_err(|e| e.to_string())?
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn disconnect_codex(
     state: tauri::State<'_, Arc<Mutex<codex::CodexState>>>,
@@ -1035,18 +1049,21 @@ async fn disconnect_codex(
     .await
     .map_err(|e| e.to_string())?
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn install_claude_bridge(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || bridge::install(&app))
+    tauri::async_runtime::spawn_blocking(move || bridge::install(&data_dir(&app)?))
         .await
         .map_err(|e| e.to_string())?
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn remove_claude_bridge(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || bridge::remove(&app))
+    tauri::async_runtime::spawn_blocking(move || bridge::remove(&data_dir(&app)?))
         .await
         .map_err(|e| e.to_string())?
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn quit_app(
     app: AppHandle,
@@ -1062,6 +1079,7 @@ async fn quit_app(
     app.exit(0);
     Ok(())
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 async fn restart_app(
     app: AppHandle,
@@ -1076,6 +1094,7 @@ async fn restart_app(
     .map_err(|e| e.to_string())??;
     app.restart()
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 fn set_preferences(app: AppHandle, launch_at_login: bool) -> Result<(), String> {
     // The frontend's serialized writer owns the profile, including notifications.
@@ -1085,6 +1104,7 @@ fn set_preferences(app: AppHandle, launch_at_login: bool) -> Result<(), String> 
         app.autolaunch().disable().map_err(|e| e.to_string())
     }
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 fn notify_attention(app: AppHandle, surfaces: Vec<String>) -> Result<(), String> {
     if !load_settings(app.clone())?.notifications {
@@ -1104,10 +1124,12 @@ fn notify_attention(app: AppHandle, surfaces: Vec<String>) -> Result<(), String>
         .show()
         .map_err(|e| e.to_string())
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 fn dismiss_attention(app: AppHandle, id: String) -> Result<(), String> {
-    bridge::dismiss(&app, &id)
+    bridge::dismiss(&data_dir(&app)?, &id)
 }
+#[cfg(feature = "desktop-webview")]
 #[tauri::command]
 fn open_link(app: AppHandle, kind: String) -> Result<(), String> {
     let url = match kind.as_str() {
@@ -1123,6 +1145,7 @@ fn open_link(app: AppHandle, kind: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+#[cfg(feature = "desktop-webview")]
 pub fn run() {
     if bridge::run_cli_if_requested() {
         return;
@@ -1205,4 +1228,9 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Neon HUD failed to start");
+}
+
+#[cfg(not(feature = "desktop-webview"))]
+pub fn run() {
+    let _ = run_bridge_cli();
 }

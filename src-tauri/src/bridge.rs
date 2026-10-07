@@ -12,7 +12,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager};
 
 const MAX_INPUT: u64 = 1024 * 1024;
 const OWN: &str = "--bridge";
@@ -375,7 +374,7 @@ fn settings_bridge_enabled(settings: &Value, owner: &Path) -> bool {
             })
     })
 }
-pub fn is_enabled(_app: &AppHandle) -> bool {
+pub fn is_enabled() -> bool {
     let Ok(owner) = std::env::current_exe() else {
         return false;
     };
@@ -492,14 +491,13 @@ fn remove_settings(
         .is_some_and(|path| same_executable(Path::new(path), current_exe));
     Ok((settings, updated_manifest, owns_manifest))
 }
-pub fn install(app: &AppHandle) -> Result<String, String> {
+pub fn install(dir: &Path) -> Result<String, String> {
     let path = settings_path()?;
     let current = read_settings(&path)?;
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let saved = dir.join("claude-bridge-manifest.json");
     let manifest = read_settings(&saved).unwrap_or(Value::Null);
     let owners = executable_owners(&manifest)?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let backup = dir.join("claude-settings.backup.json");
     if !backup.exists() {
         atomic_json(&backup, &current)?;
@@ -542,9 +540,8 @@ pub fn install(app: &AppHandle) -> Result<String, String> {
             .into(),
     )
 }
-pub fn remove(app: &AppHandle) -> Result<String, String> {
+pub fn remove(dir: &Path) -> Result<String, String> {
     let path = settings_path()?;
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let manifest_path = dir.join("claude-bridge-manifest.json");
     let manifest = read_settings(&manifest_path).unwrap_or(Value::Null);
     let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -790,17 +787,8 @@ pub fn run_cli_if_requested() -> bool {
     }
     true
 }
-pub fn read_provider(app: &AppHandle) -> (Usage, Vec<Attention>) {
-    let dir = match app.path().app_config_dir() {
-        Ok(v) => v,
-        Err(_) => {
-            return (
-                Usage::unavailable("claude", "Claude Code bridge", "App data unavailable"),
-                vec![],
-            )
-        }
-    };
-    read_provider_dir(&dir)
+pub fn read_provider(dir: &Path) -> (Usage, Vec<Attention>) {
+    read_provider_dir(dir)
 }
 fn read_provider_dir(dir: &Path) -> (Usage, Vec<Attention>) {
     let Ok(index) = load_or_build_index(dir) else {
@@ -826,8 +814,7 @@ fn read_provider_dir(dir: &Path) -> (Usage, Vec<Attention>) {
     attention.sort_by(|a, b| b.occurred_at.total_cmp(&a.occurred_at));
     (usage, attention)
 }
-pub fn dismiss(app: &AppHandle, id: &str) -> Result<(), String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+pub fn dismiss(dir: &Path, id: &str) -> Result<(), String> {
     let Some((session_hash, _)) = id.split_once('-') else {
         return Ok(());
     };

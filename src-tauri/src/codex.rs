@@ -7,8 +7,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager};
-use tauri_plugin_opener::OpenerExt;
 
 pub struct CodexState {
     child: Option<Child>,
@@ -132,7 +130,10 @@ impl CodexState {
         self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))?;
         self.response(id, Duration::from_secs(8))
     }
-    pub fn connect(&mut self, app: &AppHandle, login: bool) -> Result<String, String> {
+    pub fn connect<F>(&mut self, login: bool, open_url: F) -> Result<String, String>
+    where
+        F: FnOnce(&str) -> Result<(), String>,
+    {
         self.disconnect();
         if let Err(e) = self.start() {
             self.disconnect();
@@ -155,9 +156,7 @@ impl CodexState {
                 if !url.starts_with("https://") {
                     return Err("Codex returned an unsafe authorization URL".into());
                 }
-                app.opener()
-                    .open_url(url, None::<&str>)
-                    .map_err(|e| e.to_string())?;
+                open_url(url)?;
                 self.usage = Usage {
                     surface: "codex".into(),
                     source: "Codex app-server".into(),

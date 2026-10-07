@@ -1,0 +1,113 @@
+name: Native desktop preview
+
+on:
+  push:
+    branches: [codex/native-desktop]
+    paths:
+      - '.github/workflows/native.yml'
+      - 'src-native/**'
+      - 'src-tauri/**'
+      - 'scripts/native-windows-smoke.ps1'
+      - 'scripts/package-native-macos.sh'
+      - 'LICENSE-APACHE'
+      - 'NOTICE'
+      - 'THIRD-PARTY-NOTICES.md'
+  pull_request:
+    paths:
+      - '.github/workflows/native.yml'
+      - 'src-native/**'
+      - 'src-tauri/**'
+      - 'scripts/native-windows-smoke.ps1'
+      - 'scripts/package-native-macos.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-preview:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-native -> target
+            src-tauri -> target
+      - name: Format native source
+        run: cargo fmt --manifest-path src-native/Cargo.toml --check
+      - name: Test native source
+        run: cargo test --manifest-path src-native/Cargo.toml
+      - name: Verify native dependency closure
+        shell: bash
+        run: |
+          tree="$(cargo tree --manifest-path src-native/Cargo.toml --edges normal --prefix none)"
+          if grep -E '^(tauri|tauri-build|tauri-plugin-|wry |webview2-com |webkit2gtk )' <<< "$tree"; then
+            echo 'Native dependency closure includes a desktop webview crate' >&2
+            exit 1
+          fi
+      - name: Regression test desktop webview
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Regression test headless core
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-default-features
+      - name: Build native release
+        run: cargo build --manifest-path src-native/Cargo.toml --release
+      - name: Capture native Windows GUI and process receipt
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke"
+      - name: Package Windows portable preview
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'neon-hud-native-windows-x64-unsigned-preview'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          Copy-Item -LiteralPath 'src-native/target/release/neon-hud-native.exe', 'LICENSE-APACHE', 'NOTICE', 'THIRD-PARTY-NOTICES.md' -Destination $package
+          @'
+          Unsigned native desktop preview. Extract the ZIP and run neon-hud-native.exe.
+          This preview is not connected to the existing updater and is not an installed release.
+          '@ | Set-Content -LiteralPath (Join-Path $package 'PREVIEW.txt')
+          Compress-Archive -LiteralPath $package -DestinationPath "$package.zip" -Force
+      - name: Upload Windows smoke evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-smoke-evidence
+          path: ${{ runner.temp }}/native-smoke/**
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Package macOS app and DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/package-native-macos.sh src-native/target/release/neon-hud-native "$RUNNER_TEMP/native-package"
+      - name: Upload Windows portable preview
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-x64-unsigned-preview
+          path: |
+            ${{ runner.temp }}/neon-hud-native-windows-x64-unsigned-preview.zip
+            src-native/target/release/neon-hud-native.exe
+            src-native/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload macOS app and DMG preview
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-macos-unsigned-preview
+          path: |
+            ${{ runner.temp }}/native-package/*.dmg
+            ${{ runner.temp }}/native-package/*.zip
+            src-native/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
