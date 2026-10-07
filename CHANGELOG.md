@@ -1,11 +1,18 @@
 # Changelog
 
+## [0.2.0-alpha.4] - 2026-10-07
+
+- The Download update action stays visible and disabled while an update operation runs. Hovering identifies the signed release version, and the status and activity indicator show progress.
+- Receives updates from the signed native-preview channel introduced in alpha.3, retaining the app icon, screen-aware right-click controls and saved native preferences.
+
 ## [0.2.0-alpha.3] - 2026-10-07
 
 - Right-click any metric, the drag grip or pill background to open a separate native controls popup. The complete menu opens inward at screen edges, supports Settings, compression, pause/resume, hide, reset and Quit, and dismisses with Escape or a focus change. Shift+F10 also opens it.
 - Embedded the Neon N icon in the Windows executable and native windows; the tray now uses the same mark. macOS retains its bundled app icon.
 - Controls use two columns when a small monitor limits the popup height, keeping every action reachable without scrolling.
 - Added real Windows mouse-input checks at all eight edges/corners, all six menu actions and Escape dismissal, plus executable/window icon checks.
+- Fixed Windows pointer re-entry at identical client coordinates, so moving the pill between screen edges does not leave right-click input without a pointer position.
+- Hidden Windows HUDs receive coalesced background callbacks, preserving tray actions, profile saves and updater completion at the existing slower sampling rate.
 - Added a separate signed native update channel with bounded downloads, archive size/hash verification, normal-exit installation, retained application backup and startup acknowledgement. Settings includes automatic checks/downloads, Check now, progress and Restart and update; failed automatic downloads wait for a new check. The stable webview updater feed is unchanged.
 
 ## [0.2.0-alpha.2] - 2026-10-07

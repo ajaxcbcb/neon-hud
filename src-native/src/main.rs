@@ -1536,8 +1536,15 @@ impl App {
                     self.quitting = true;
                     self.update_status = "Saving your settings before restarting…".into();
                 }
-            } else if self.update_offer.is_some() && !self.update_busy {
-                if ui.button("Download update").clicked() {
+            } else if let Some(offer) = &self.update_offer {
+                if ui
+                    .add_enabled(
+                        !self.update_busy && !self.quitting,
+                        egui::Button::new("Download update"),
+                    )
+                    .on_hover_text(format!("Signed release {}", offer.version))
+                    .clicked()
+                {
                     self.download_update();
                 }
             }
