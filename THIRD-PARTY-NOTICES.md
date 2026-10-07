@@ -15,4 +15,4 @@ Native settings also embed Ubuntu Bold under the Ubuntu Font Licence 1.0. The un
 
 Dependency versions are recorded in `package-lock.json`, `src-tauri/Cargo.lock` and `src-native/Cargo.lock`. Svelte, Vite and their dependencies retain their upstream licenses; Tauri and Rust dependencies retain theirs. Release packages include project license files and provider graphic notices. This list does not relicense third-party dependencies or trademarks.
 
-The native preview vendors winit 0.30.13 under Apache 2.0, copyright the winit contributors. Its full unchanged license is in `src-native/vendor/winit/LICENSE`. One Windows input change restores pointer coordinates on window re-entry; provenance and the modification are described in `src-native/vendor/README.md`.
+The native preview vendors winit 0.30.13 under Apache 2.0, copyright the winit contributors. Its full unchanged license is in `src-native/vendor/winit/LICENSE`. Windows modifications restore pointer coordinates on window re-entry and deliver coalesced redraw callbacks while hidden; provenance and modifications are described in `src-native/vendor/README.md`.

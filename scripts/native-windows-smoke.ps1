@@ -386,6 +386,15 @@ try {
     } while (-not $process.HasExited -and (Get-Date) -lt $exitDeadline)
     if (-not $process.HasExited) { throw 'Native --smoke did not autoexit within 35 seconds after capture' }
     if ($process.ExitCode -ne 0) { throw "Native --smoke exited with code $($process.ExitCode)" }
+    $hiddenLifecycle = $null
+    if ($ContextMenu -and -not $QuitMenu) {
+        $trace = Get-Content -LiteralPath $stderr -Raw
+        $hiddenTicks = @([regex]::Matches($trace, 'NEON_HIDDEN_TICK elapsedMs=(\d+)') | ForEach-Object { [long]$_.Groups[1].Value })
+        if ($hiddenTicks.Count -lt 2 -or $hiddenTicks.Count -gt 100) { throw 'Hidden callbacks were absent or unbounded' }
+        $hiddenSpan = $hiddenTicks[-1]-$hiddenTicks[0]
+        if ($hiddenSpan -lt 1000) { throw 'Hidden background callbacks did not continue after Hide' }
+        $hiddenLifecycle = [ordered]@{ callbacks=$hiddenTicks.Count; spanMs=$hiddenSpan; normalExit=$true }
+    }
 
     $receipt = [ordered]@{
         executable = [IO.Path]::GetFileName($executablePath)
@@ -396,6 +405,7 @@ try {
         captures = @($captures)
         hoverChecks = @($hoverChecks)
         menuChecks = @($menuChecks)
+        hiddenLifecycle = $hiddenLifecycle
         programIconVerified = $programIconVerified
         windowIconVerified = $windowIconVerified
         processTreeAtCapture = @($tree)

@@ -1274,8 +1274,11 @@ unsafe fn public_window_callback_inner(
         },
 
         WM_PAINT => {
-            userdata.window_state_lock().redraw_requested =
-                userdata.event_loop_runner.should_buffer();
+            {
+                let mut state = userdata.window_state_lock();
+                state.hidden_redraw_pending = false;
+                state.redraw_requested = userdata.event_loop_runner.should_buffer();
+            }
 
             // We'll buffer only in response to `UpdateWindow`, if win32 decides to redraw the
             // window outside the normal flow of the event loop. This way mark event as handled
@@ -1293,7 +1296,7 @@ unsafe fn public_window_callback_inner(
             // after marking `WM_PAINT` as handled.
             result = ProcResult::Value(unsafe { DefWindowProcW(window, msg, wparam, lparam) });
             if std::mem::take(&mut userdata.window_state_lock().redraw_requested) {
-                unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
+                super::window_state::queue_redraw(window, &userdata.window_state);
             }
         },
         WM_WINDOWPOSCHANGING => {

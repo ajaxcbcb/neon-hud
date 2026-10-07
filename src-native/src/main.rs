@@ -2215,6 +2215,12 @@ impl eframe::App for App {
         self.settings_window(ctx);
         self.detail_window(ctx);
         self.hover_window(ctx);
+        if self.smoke && self.hidden {
+            eprintln!(
+                "NEON_HIDDEN_TICK elapsedMs={}",
+                self.started.elapsed().as_millis()
+            );
+        }
         if self.smoke
             && self.started.elapsed()
                 > Duration::from_secs(if self.smoke_interaction { 30 } else { 12 })
