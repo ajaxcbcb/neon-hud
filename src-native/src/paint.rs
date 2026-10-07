@@ -373,6 +373,44 @@ pub fn icon(painter: &egui::Painter, c: Pos2, key: &str, color: Color32, size: f
         painter.line_segment([pt(a.0, a.1), pt(b.0, b.1)], stroke);
     };
     match key {
+        "settings" => {
+            let points = (0..=24).map(|i| {
+                let angle = i as f32 * std::f32::consts::TAU / 24.;
+                let radius = if i % 4 == 0 || i % 4 == 3 { 8. } else { 6. };
+                c + Vec2::angled(angle) * radius * s
+            }).collect();
+            painter.add(egui::Shape::line(points, stroke));
+            painter.circle_stroke(c, 2.6 * s, stroke);
+        }
+        "pin" => {
+            line((-4., -7.), (4., -7.));
+            line((-3., -7.), (-3., -1.));
+            line((3., -7.), (3., -1.));
+            line((-3., -1.), (-6., 2.));
+            line((3., -1.), (6., 2.));
+            line((-6., 2.), (6., 2.));
+            line((0., 2.), (0., 8.));
+        }
+        "notes" => {
+            painter.rect_stroke(Rect::from_center_size(c, Vec2::new(12.*s, 15.*s)), 2, stroke, egui::StrokeKind::Middle);
+            for y in [-4., 0., 4.] { line((-3.,y),(3.,y)); }
+        }
+        "tasks" => {
+            painter.rect_stroke(Rect::from_center_size(pt(-4.,-4.), Vec2::splat(5.*s)), 1, stroke, egui::StrokeKind::Middle);
+            line((0.,-4.),(7.,-4.));
+            line((-6.,4.),(-4.,6.)); line((-4.,6.),(-1.,2.));
+            line((1.,4.),(7.,4.));
+        }
+        "timer" => {
+            painter.circle_stroke(pt(0.,1.), 6.5*s, stroke);
+            line((-3.,-8.),(3.,-8.)); line((0.,-8.),(0.,-6.));
+            line((0.,1.),(0.,-3.)); line((0.,1.),(3.,3.));
+        }
+        "files" => {
+            painter.add(egui::Shape::line(vec![pt(-8.,6.),pt(-8.,-6.),pt(-2.,-6.),
+                pt(0.,-3.),pt(8.,-3.),pt(8.,6.),pt(-8.,6.)], stroke));
+            line((-8.,-1.),(8.,-1.));
+        }
         "check" => {
             line((-5., 0.), (-1., 4.));
             line((-1., 4.), (6., -5.));

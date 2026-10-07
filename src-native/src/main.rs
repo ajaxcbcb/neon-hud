@@ -2,7 +2,10 @@
 mod backend;
 mod desktop;
 mod model;
+mod nook;
+mod nook_ui;
 mod paint;
+mod productivity;
 mod updater;
 
 use backend::{Command, Event, Worker};
@@ -38,10 +41,15 @@ fn main() -> eframe::Result<()> {
     }
     let args: Vec<String> = std::env::args().collect();
     let smoke = args.iter().any(|a| a == "--smoke");
+    let smoke_nook = smoke && args.iter().any(|a| a == "--smoke-nook");
+    let smoke_nook_tab = if smoke_nook {
+        args.iter().find_map(|arg| arg.strip_prefix("--smoke-nook-tab=")
+            .and_then(|value| value.parse::<usize>().ok())).map(|tab| tab.min(5))
+    } else { None };
     let smoke_interaction = smoke
         && args
             .iter()
-            .any(|a| a == "--smoke-hover" || a == "--smoke-menu");
+            .any(|a| a == "--smoke-hover" || a == "--smoke-menu" || a == "--smoke-nook-interaction");
     let smoke_page = args
         .iter()
         .find_map(|a| {
@@ -100,6 +108,8 @@ fn main() -> eframe::Result<()> {
                 minimized,
                 smoke_page,
                 smoke_interaction,
+                smoke_nook,
+                smoke_nook_tab,
             )))
         }),
     )
@@ -170,6 +180,10 @@ fn update_cli(args: &[String], profile: &std::path::Path) -> Option<Result<Value
 struct App {
     worker: Worker,
     profile_dir: PathBuf,
+    productivity: Option<productivity::Controller>,
+    productivity_status: String,
+    timer_notice_until: Instant,
+    nook_ui: nook_ui::NookUi,
     update_worker: updater::Worker,
     update_preferences: UpdatePreferences,
     update_status: String,
@@ -249,6 +263,8 @@ impl App {
         minimized: bool,
         smoke_page: usize,
         smoke_interaction: bool,
+        smoke_nook: bool,
+        smoke_nook_tab: Option<usize>,
     ) -> Self {
         let ctx = &cc.egui_ctx;
         ctx.set_embed_viewports(false);
@@ -276,6 +292,10 @@ impl App {
         } else {
             None
         };
+        let (productivity, productivity_status) = match productivity::Controller::start(&dir) {
+            Ok(controller) => (Some(controller), "Loading Nook utilities…".into()),
+            Err(error) => (None, format!("Nook utilities unavailable: {error}")),
+        };
         Self {
             worker: Worker::start(dir.clone(), ctx.clone()),
             update_worker: updater::Worker::start(dir.clone(), ctx.clone()),
@@ -284,6 +304,10 @@ impl App {
                 .and_then(|v| serde_json::from_slice(&v).ok())
                 .unwrap_or_default(),
             profile_dir: dir,
+            productivity,
+            productivity_status,
+            timer_notice_until: Instant::now(),
+            nook_ui: nook_ui::NookUi::new(ctx.clone(), smoke && !smoke_nook, smoke_nook_tab),
             update_status: update_error
                 .as_ref()
                 .map(|error| format!("Previous update failed: {error}"))
@@ -318,8 +342,8 @@ impl App {
             tray,
             hidden,
             paused: false,
-            settings: (smoke && !smoke_interaction) || update_error.is_some(),
-            details: smoke && smoke_page == 0 && !smoke_interaction,
+            settings: (smoke && !smoke_nook && !smoke_interaction) || update_error.is_some(),
+            details: smoke && !smoke_nook && smoke_page == 0 && !smoke_interaction,
             page: if update_error.is_some() {
                 2
             } else if smoke {
@@ -368,12 +392,25 @@ impl App {
         if self.busy {
             return;
         }
+        let connection_intent = match &c {
+            Command::Connect(_) => Some(true),
+            Command::Disconnect => Some(false),
+            _ => None,
+        };
         if self.command(c) {
+            if let Some(enabled) = connection_intent {
+                self.profile["codexEnabled"] = json!(enabled);
+                self.dirty();
+            }
             self.busy = true;
             self.status = "Connecting…".into();
         }
     }
     fn compress(&mut self, ctx: &egui::Context) {
+        if self.is_nook() {
+            self.toggle_nook(ctx);
+            return;
+        }
         self.profile["size"] = json!(if text(&self.profile, "size") == "compressed" {
             "compact"
         } else {
@@ -383,6 +420,7 @@ impl App {
         self.resize(ctx);
     }
     fn resize(&self, ctx: &egui::Context) {
+        if self.is_nook() { return; }
         let width = if text(&self.profile, "size") == "compressed" {
             160.
         } else {
@@ -428,7 +466,7 @@ impl App {
                             egui::WindowLevel::Normal
                         },
                     ));
-                    if !self.smoke {
+                    if !self.smoke && !self.is_nook() {
                         let width = if text(&self.profile, "size") == "compressed" {
                             160.
                         } else {
@@ -446,8 +484,8 @@ impl App {
                             )));
                             self.position_hold = Instant::now() + Duration::from_millis(350);
                         }
-                        self.settings |= !flag(&self.profile, "completed");
                     }
+                    if !self.smoke { self.settings |= !flag(&self.profile, "completed"); }
                     // Preview launch never enables connectors or startup automatically.
                 }
                 Event::Loaded(Err(e)) => {
@@ -537,6 +575,7 @@ impl App {
                             self.quitting = false;
                             self.stopping = false;
                             self.worker = Worker::start(self.profile_dir.clone(), ctx.clone());
+                            self.restart_productivity();
                             self.settings = true;
                             self.show(ctx);
                             continue;
@@ -544,6 +583,60 @@ impl App {
                     }
                     ctx.send_viewport_cmd_to(ViewportId::ROOT, ViewportCommand::Close);
                 }
+            }
+        }
+    }
+    fn restart_productivity(&mut self) {
+        match productivity::Controller::start(&self.profile_dir) {
+            Ok(controller) => {
+                self.productivity = Some(controller);
+                self.productivity_status = "Loading Nook utilities…".into();
+            }
+            Err(error) => {
+                self.productivity = None;
+                self.productivity_status = format!("Nook utilities unavailable: {error}");
+            }
+        }
+    }
+    fn productivity_events(&mut self, ctx: &egui::Context) {
+        let now_ms = (now() * 1000.) as i64;
+        let events = if let Some(controller) = &mut self.productivity {
+            if let Err(error) = controller.reconcile_timer(now_ms) {
+                self.productivity_status = error;
+            }
+            controller.poll(now_ms)
+        } else {
+            Vec::new()
+        };
+        for event in events {
+            match event {
+                productivity::ControllerEvent::Loaded { recovered, warning } => {
+                    self.productivity_status = warning.unwrap_or_else(|| {
+                        if recovered { "Nook utilities recovered from backup".into() }
+                        else { "Saved locally".into() }
+                    });
+                }
+                productivity::ControllerEvent::LoadFailed(error) => {
+                    self.productivity_status = format!("Nook utilities are read-only: {error}");
+                }
+                productivity::ControllerEvent::Saved(_) => {
+                    self.productivity_status = "Saved locally".into();
+                }
+                productivity::ControllerEvent::SaveFailed { error, .. } => {
+                    self.productivity_status = format!("Nook save failed: {error}");
+                }
+                productivity::ControllerEvent::TimerCompleted => {
+                    self.productivity_status = "Timer complete".into();
+                    self.timer_notice_until = Instant::now() + Duration::from_secs(5);
+                }
+                productivity::ControllerEvent::StopFailed(error) => {
+                    self.productivity_status = format!("Could not save Nook utilities: {error}");
+                    self.quitting = false;
+                    self.applying_update = false;
+                    self.settings = true;
+                    self.show(ctx);
+                }
+                productivity::ControllerEvent::Stopped => {}
             }
         }
     }
@@ -576,7 +669,7 @@ impl App {
             self.last_providers = Instant::now();
         }
     }
-    fn persist(&mut self) {
+    fn persist(&mut self, ctx: &egui::Context) {
         if self.writable
             && self.revision > self.saved
             && !self.save_pending
@@ -585,9 +678,25 @@ impl App {
         {
             self.save_pending = true;
         }
+        let core_saved = !self.save_pending && (!self.writable || self.saved == self.revision);
+        if self.quitting && core_saved {
+            if let Some(controller) = &mut self.productivity {
+                if !controller.loading() && !controller.stop_requested() {
+                    if let Err(error) = controller.request_stop() {
+                        self.productivity_status = format!("Could not save Nook utilities: {error}");
+                        self.quitting = false;
+                        self.applying_update = false;
+                        self.settings = true;
+                        self.show(ctx);
+                    }
+                }
+            }
+        }
+        let utilities_stopped = self.productivity.as_ref().is_none_or(|c| c.ready_to_stop());
         if self.quitting
             && !self.save_pending
             && (!self.writable || self.saved == self.revision)
+            && utilities_stopped
             && !self.stopping
             && self.command(Command::Stop)
         {
@@ -701,9 +810,14 @@ impl App {
         }
     }
     fn hud(&mut self, ctx: &egui::Context) {
+        if self.is_nook() {
+            self.nook_hud(ctx);
+            return;
+        }
         if self.hidden {
             return;
         }
+        self.initialize_pill(ctx);
         let p = self.palette();
         let compact = text(&self.profile, "size") == "compressed";
         self.hover = None;
@@ -1269,6 +1383,16 @@ impl App {
         });
         ui.separator();
         if self.preferences_tab == 0 {
+            ui.add_enabled_ui(self.productivity.as_ref().is_some_and(|c| c.writable()), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("HUD layout");
+                    for (mode, label) in [(nook::PresentationMode::Nook, "Nook"), (nook::PresentationMode::Pill, "Floating pill")] {
+                        if ui.selectable_label(self.is_nook() == (mode == nook::PresentationMode::Nook), label).clicked() {
+                            self.set_presentation(mode, ctx);
+                        }
+                    }
+                });
+            });
             self.metrics(ui);
             ui.separator();
             ui.horizontal(|ui| {
@@ -1794,20 +1918,18 @@ impl App {
                                 let u = self.usage(&self.selected);
                                 ui.label(egui::RichText::new(text(&u, "message")).small());
                                 for w in array(&u, "windows").iter().take(2) {
-                                    let fresh = number(&u, "fetchedAt")
+                                    let fresh = text(&u, "state") == "connected" && number(&u, "fetchedAt")
                                         .is_some_and(|t| (0.0..=600.).contains(&(now() - t)))
                                         && !number(w, "resetsAt").is_some_and(|t| t <= now());
-                                    let remaining = if fresh {
-                                        number(w, "usedPercent").map(|v| 100. - v)
-                                    } else {
-                                        None
-                                    };
+                                    let remaining = number(w, "usedPercent")
+                                        .map(|v| 100. - v.clamp(0., 100.));
                                     ui.label(format!(
-                                        "{} · {} remaining",
+                                        "{} · {} remaining{}",
                                         text(w, "label"),
-                                        percent(remaining)
+                                        percent(remaining),
+                                        if fresh { "" } else { " · last known" }
                                     ));
-                                    paint::bar(ui, remaining.map(|n| 100. - n), 360.);
+                                    paint::bar(ui, if fresh { remaining.map(|n| 100. - n) } else { None }, 360.);
                                     let r = self.drain.rate(&u, w, now());
                                     let reset = number(w, "resetsAt")
                                         .map(|t| {
@@ -1822,9 +1944,8 @@ impl App {
                                             r.per_hour
                                                 .map(|n| format!("Drain {n:.1}% / hour{reset}"))
                                                 .unwrap_or_else(|| {
-                                                    format!(
-                                                        "Measuring average for 2 minutes{reset}"
-                                                    )
+                                                    if fresh { format!("Measuring average for 2 minutes{reset}") }
+                                                    else { "Waiting for a current reading".into() }
                                                 }),
                                         )
                                         .small(),
@@ -2046,7 +2167,9 @@ impl App {
                         let compact = text(&self.profile, "size") == "compressed";
                         let full_labels = [
                             "Settings…",
-                            if compact {
+                            if self.is_nook() {
+                                "Collapse Nook"
+                            } else if compact {
                                 "Expand pill"
                             } else {
                                 "Compress pill"
@@ -2062,7 +2185,7 @@ impl App {
                         ];
                         let short_labels = [
                             "Settings",
-                            if compact { "Expand" } else { "Compress" },
+                            if self.is_nook() { "Collapse" } else if compact { "Expand" } else { "Compress" },
                             if self.paused { "Resume" } else { "Pause" },
                             "Hide",
                             "Reset",
@@ -2094,10 +2217,10 @@ impl App {
                                     1 => self.compress(ctx),
                                     2 => self.paused = !self.paused,
                                     3 => self.hide(ctx),
-                                    4 => ctx.send_viewport_cmd_to(
-                                        ViewportId::ROOT,
-                                        ViewportCommand::OuterPosition(Pos2::new(60., 60.)),
-                                    ),
+                                    4 => if self.is_nook() { self.reset_nook(ctx); } else {
+                                        ctx.send_viewport_cmd_to(ViewportId::ROOT,
+                                            ViewportCommand::OuterPosition(Pos2::new(60., 60.)));
+                                    },
                                     5 => self.quitting = true,
                                     _ => unreachable!(),
                                 }
@@ -2192,6 +2315,7 @@ impl eframe::App for App {
             self.last_screens = Instant::now();
         }
         self.events(ctx);
+        self.productivity_events(ctx);
         self.update_events();
         self.palette().apply(ctx);
         if let Some(tray) = &self.tray {
@@ -2222,6 +2346,7 @@ impl eframe::App for App {
         self.settings_window(ctx);
         self.detail_window(ctx);
         self.hover_window(ctx);
+        self.timer_notice_window(ctx);
         if self.smoke && self.hidden {
             eprintln!(
                 "NEON_HIDDEN_TICK elapsedMs={}",
@@ -2234,7 +2359,7 @@ impl eframe::App for App {
         {
             self.quitting = true;
         }
-        self.persist();
+        self.persist(ctx);
         if self.loaded && self.writable && !self.update_acknowledged {
             if let Err(error) = updater::acknowledge_from_args(&self.profile_dir) {
                 self.update_status = format!("Update startup acknowledgement failed: {error}");
@@ -2246,11 +2371,28 @@ impl eframe::App for App {
             self.hidden,
         );
         ctx.request_repaint_after(Duration::from_millis(interval));
-        if self.busy || self.save_pending || self.quitting || self.update_busy {
+        if self.busy || self.save_pending || self.quitting || self.update_busy
+            || self.productivity.as_ref().is_some_and(|c| c.needs_repaint()) {
             ctx.request_repaint_after(Duration::from_millis(100));
+        }
+        if let Some(controller) = &self.productivity {
+            if let productivity::Timer::Running { .. } = controller.state.timer {
+                let remaining = controller.state.timer.remaining_ms((now() * 1000.) as i64);
+                let wake = if self.hidden { remaining.max(1) } else { remaining.clamp(1, 1000) };
+                ctx.request_repaint_after(Duration::from_millis(wake as u64));
+            }
         }
     }
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0., 0., 0., 0.]
+    }
+}
+impl Drop for App {
+    fn drop(&mut self) {
+        if let Some(controller) = &mut self.productivity {
+            if controller.ready_to_stop() {
+                let _ = controller.join_stopped();
+            }
+        }
     }
 }

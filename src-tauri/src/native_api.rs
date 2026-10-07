@@ -9,6 +9,7 @@ use std::path::PathBuf;
 pub struct NativeBackend {
     config_dir: PathBuf,
     bridge_dir: PathBuf,
+    preview: bool,
     monitor: SystemMonitor,
     codex: CodexState,
 }
@@ -20,19 +21,24 @@ impl NativeBackend {
         }
         // Claude hooks are installed once per account and their CLI writes to
         // the shared app directory. Only preferences use the preview subfolder.
-        let bridge_dir = if config_dir
+        let preview = config_dir
             .file_name()
-            .is_some_and(|n| n == "native-preview")
-        {
+            .is_some_and(|n| n == "native-preview");
+        let bridge_dir = if preview {
             config_dir.parent().unwrap_or(&config_dir).to_path_buf()
         } else {
             config_dir.clone()
         };
+        let mut codex = CodexState::default();
+        if !preview {
+            codex.restore_enabled(read_settings(&config_dir.join("settings.json"))?.codex_enabled);
+        }
         Ok(Self {
             config_dir,
             bridge_dir,
+            preview,
             monitor: SystemMonitor::new(),
-            codex: CodexState::default(),
+            codex,
         })
     }
 
@@ -48,6 +54,9 @@ impl NativeBackend {
     pub fn save_profile(&self, value: Value) -> Result<(), String> {
         let mut settings: Settings = serde_json::from_value(value).map_err(|e| e.to_string())?;
         super::normalize_settings(&mut settings);
+        // Connect/Disconnect alone own enabled intent. A queued whole-profile
+        // edit with an older UI snapshot must not silently undo it.
+        settings.codex_enabled = read_settings(&self.config_dir.join("settings.json"))?.codex_enabled;
         atomic_json(&self.config_dir.join("settings.json"), &settings)
     }
 
@@ -66,6 +75,7 @@ impl NativeBackend {
             "ChatGPT chat allowance is unavailable through a supported local source.",
         )];
         usages.push(self.codex.usage());
+        if !self.preview { let _ = bridge::restore_relocated(&self.bridge_dir); }
         let (claude, attention) = bridge::read_provider(&self.bridge_dir);
         usages.push(claude.clone());
         usages.push(Usage {
@@ -82,12 +92,28 @@ impl NativeBackend {
     }
 
     pub fn connect_codex(&mut self, login: bool) -> Result<String, String> {
+        if self.preview { return Err("Connections are disabled in native preview".into()); }
+        self.persist_codex_enabled(true)?;
         self.codex
-            .connect(login, |url| open::that(url).map_err(|e| e.to_string()))
+            .connect_enabled(login, |url| open::that(url).map_err(|e| e.to_string()))
     }
 
-    pub fn disconnect_codex(&mut self) {
+    pub fn disconnect_codex(&mut self) -> Result<(), String> {
+        if self.preview { return Err("Connections are disabled in native preview".into()); }
+        self.persist_codex_enabled(false)?;
+        self.codex.set_enabled(false);
+        Ok(())
+    }
+
+    pub fn stop(&mut self) {
         self.codex.disconnect();
+    }
+
+    fn persist_codex_enabled(&self, enabled: bool) -> Result<(), String> {
+        let path = self.config_dir.join("settings.json");
+        let mut settings = read_settings(&path)?;
+        settings.codex_enabled = enabled;
+        atomic_json(&path, &settings)
     }
 
     pub fn install_claude_bridge(&self) -> Result<String, String> {
@@ -140,6 +166,44 @@ mod tests {
         profile["theme"] = Value::String("cyberpunk".into());
         preview.save_profile(profile).unwrap();
         assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(), original);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn codex_intent_restores_and_stale_profile_save_cannot_clear_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "neon-native-intent-{}-{}", std::process::id(), super::super::now().to_bits()
+        ));
+        let backend = NativeBackend::new(dir.clone()).unwrap();
+        backend.persist_codex_enabled(true).unwrap();
+        let restored = NativeBackend::new(dir.clone()).unwrap();
+        assert!(restored.codex.is_enabled());
+        let mut stale = restored.load_profile().unwrap();
+        stale["codexEnabled"] = Value::Bool(false);
+        restored.save_profile(stale).unwrap();
+        assert_eq!(restored.load_profile().unwrap()["codexEnabled"], true);
+        let preview = NativeBackend::new(dir.join("native-preview")).unwrap();
+        assert!(!preview.codex.is_enabled());
+        restored.persist_codex_enabled(false).unwrap();
+        assert!(!NativeBackend::new(dir.clone()).unwrap().codex.is_enabled());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn corrupt_profile_is_not_overwritten_by_connection_intent() {
+        let dir = std::env::temp_dir().join(format!(
+            "neon-native-corrupt-{}-{}", std::process::id(), super::super::now().to_bits()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        std::fs::write(&path, b"not JSON").unwrap();
+        // Construct without loading the corrupt profile to exercise the
+        // persistence guard directly; startup itself must also fail closed.
+        let backend = NativeBackend {
+            config_dir: dir.clone(), bridge_dir: dir.clone(), preview: false,
+            monitor: SystemMonitor::new(), codex: CodexState::default(),
+        };
+        assert!(backend.persist_codex_enabled(true).is_err());
+        assert!(NativeBackend::new(dir.clone()).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"not JSON");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

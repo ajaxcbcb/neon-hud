@@ -4,10 +4,15 @@ param(
     [ValidateRange(0, 3)][int]$SettingsPage = 0,
     [switch]$HoverEdges,
     [switch]$ContextMenu,
-    [switch]$QuitMenu
+    [switch]$QuitMenu,
+    [switch]$Nook,
+    [ValidateRange(-1, 5)][int]$NookTab = -1,
+    [switch]$NookInteraction
 )
 $ErrorActionPreference = 'Stop'
 if ($QuitMenu -and -not $ContextMenu) { throw 'QuitMenu requires ContextMenu' }
+if (($NookTab -ge 0 -or $NookInteraction) -and -not $Nook) { throw 'NookTab and NookInteraction require Nook' }
+if ($Nook -and ($HoverEdges -or $ContextMenu)) { throw 'Nook interaction has its own scope; legacy Pill checks remain separate' }
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $executablePath = (Resolve-Path -LiteralPath $Executable).Path
 $stdout = Join-Path $OutputDirectory 'stdout.log'
@@ -146,6 +151,9 @@ $started = Get-Date
 $arguments = @('--smoke', "--smoke-page=$SettingsPage")
 if ($HoverEdges) { $arguments += '--smoke-hover' }
 if ($ContextMenu) { $arguments += '--smoke-menu' }
+if ($Nook) { $arguments += '--smoke-nook' }
+if ($NookTab -ge 0) { $arguments += "--smoke-nook-tab=$NookTab" }
+if ($NookInteraction) { $arguments += '--smoke-nook-interaction' }
 # This CI-only foreground capture requires visible windows for real cursor input.
 $process = Start-Process -FilePath $executablePath -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 try {
@@ -154,7 +162,7 @@ try {
         hud = 'Neon HUD Native'
         settings = 'Neon HUD · Settings'
     }
-    if ($HoverEdges -or $ContextMenu) { $expected.Remove('settings') }
+    if ($HoverEdges -or $ContextMenu -or $Nook) { $expected.Remove('settings') }
     elseif ($SettingsPage -eq 0) { $expected.instruments = 'Neon HUD · Instruments' }
     do {
         Start-Sleep -Milliseconds 200
@@ -200,6 +208,65 @@ try {
     if (-not $programIconVerified) { throw 'Executable has no extractable Neon HUD program icon' }
     $windowIconVerified = [NativeHudCapture]::SendMessage($hudWindow.Handle, 0x7F, [IntPtr]1, [IntPtr]::Zero) -ne [IntPtr]::Zero
     if (-not $windowIconVerified) { throw 'Native HUD window has no application icon' }
+
+    $nookChecks = @()
+    if ($NookInteraction) {
+        function Wait-NookState([string]$Phase, [int]$Width, [int]$Height, [string]$Tab = 'Instruments') {
+            $stateDeadline = (Get-Date).AddSeconds(2)
+            do {
+                Start-Sleep -Milliseconds 60
+                $process.Refresh()
+                if ($process.HasExited) { throw 'Nook exited during physical interaction' }
+                $window = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
+                $trace = Get-Content -LiteralPath $stderr -Raw
+                $states = [regex]::Matches($trace, 'NEON_NOOK phase=\w+ tab=\w+')
+                $lastState = if ($states.Count -gt 0) { $states[$states.Count-1].Value } else { '' }
+                $ready = $null -ne $window -and $window.Rect.Right-$window.Rect.Left -eq $Width -and $window.Rect.Bottom-$window.Rect.Top -eq $Height -and $lastState -eq "NEON_NOOK phase=$Phase tab=$Tab"
+            } while (-not $ready -and (Get-Date) -lt $stateDeadline)
+            if (-not $ready) { throw "Nook did not settle in $Phase / $Tab ($Width x $Height); last trace: $lastState" }
+            return $window
+        }
+        function Save-NookFrame($Window, [string]$Name) {
+            $width=0; $height=0; $colors=0
+            $method = [NativeHudCapture]::Capture($Window.Handle, (Join-Path $OutputDirectory "native-nook-$Name.png"), $true, [ref]$width, [ref]$height, [ref]$colors)
+            if ($colors -lt 3) { throw "Nook $Name screenshot is blank" }
+            return [pscustomobject]@{ state=$Name; width=$width; height=$height; screenshot="native-nook-$Name.png"; captureMethod=$method; realPointerInput=$true }
+        }
+        $hudWindow = Wait-NookState 'collapsed' 240 40
+        $nookChecks += Save-NookFrame $hudWindow 'collapsed'
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+20) | Out-Null
+        $hudWindow = Wait-NookState 'peek' 520 112
+        $nookChecks += Save-NookFrame $hudWindow 'peek'
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+20) | Out-Null
+        [NativeHudCapture]::Click($false)
+        $hudWindow = Wait-NookState 'expanded' 620 288
+        $nookChecks += Save-NookFrame $hudWindow 'expanded'
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-54, $hudWindow.Rect.Top+21) | Out-Null
+        [NativeHudCapture]::Click($false)
+        $hudWindow = Wait-NookState 'pinned' 620 288
+        [NativeHudCapture]::SetCursorPos([NativeHudCapture]::GetSystemMetrics(76)+10, [NativeHudCapture]::GetSystemMetrics(77)+[NativeHudCapture]::GetSystemMetrics(79)-10) | Out-Null
+        Start-Sleep -Milliseconds 750
+        $hudWindow = Wait-NookState 'pinned' 620 288
+        $nookChecks += Save-NookFrame $hudWindow 'pinned-outside'
+        [NativeHudCapture]::Escape()
+        $hudWindow = Wait-NookState 'collapsed' 240 40
+        $nookChecks += Save-NookFrame $hudWindow 'escape'
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+20) | Out-Null
+        [NativeHudCapture]::Click($false)
+        $hudWindow = Wait-NookState 'expanded' 620 288
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-54, $hudWindow.Rect.Top+21) | Out-Null
+        [NativeHudCapture]::Click($false)
+        $hudWindow = Wait-NookState 'pinned' 620 288
+        $tabs = @('Instruments','AI','Notes','Tasks','Timer','Files')
+        foreach ($tabIndex in 0..5) {
+            $tabWidth = [Math]::Min((620-34)/6,98)
+            [NativeHudCapture]::SetCursorPos([int]($hudWindow.Rect.Left+17+($tabIndex+0.5)*$tabWidth), $hudWindow.Rect.Top+58) | Out-Null
+            [NativeHudCapture]::Click($false)
+            $hudWindow = Wait-NookState 'pinned' 620 288 $tabs[$tabIndex]
+            Start-Sleep -Milliseconds 200
+            $nookChecks += Save-NookFrame $hudWindow ($tabs[$tabIndex].ToLowerInvariant())
+        }
+    }
 
     $hoverChecks = @()
     if ($HoverEdges) {
@@ -416,6 +483,8 @@ try {
         captures = @($captures)
         hoverChecks = @($hoverChecks)
         menuChecks = @($menuChecks)
+        nookChecks = @($nookChecks)
+        nookTab = $NookTab
         hiddenLifecycle = $hiddenLifecycle
         programIconVerified = $programIconVerified
         windowIconVerified = $windowIconVerified
