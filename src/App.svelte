@@ -233,9 +233,9 @@
   function resizePill(height: number) { if (pillHeight === height) return; pillHeight = height; if (!configure && !providerDetail && isPill(settings)) void applyWindow().catch(() => error = 'The HUD window could not be resized. Reopen it from the tray.'); }
 
   async function dragHud() {
-    if (!native) { notice = 'Drag the grip in the installed desktop app.'; return; }
-    try { await getCurrentWindow().startDragging(); }
-    catch { error = 'The HUD could not be moved. Try the grip again.'; }
+    if (!native) { notice = 'Drag the grip in the installed desktop app.'; return false; }
+    try { await getCurrentWindow().startDragging(); return true; }
+    catch { error = 'The HUD could not be moved. Try the grip again.'; return false; }
   }
   async function nudgeHud(x: number, y: number) {
     if (!native) return;

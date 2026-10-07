@@ -20,7 +20,7 @@
   export let onExpand = () => {};
   export let onCompress = () => {};
   export let onResetPosition = () => {};
-  export let onDrag = () => {};
+  export let onDrag: () => Promise<boolean> = async () => false;
   export let onMove = (_x: number, _y: number) => {};
   export let onHide = () => {};
   export let onPause = () => {};
@@ -35,6 +35,7 @@
   const tracker = new PressureTracker();
   let active = '';
   let menu = false;
+  let dragging = false;
   let closeTimer: ReturnType<typeof setTimeout>;
   let shell: HTMLElement;
   let menuButton: HTMLButtonElement;
@@ -76,22 +77,33 @@
   function drag(event: PointerEvent) {
     if (event.button !== 0 || preview) return;
     // Start from the live pointer press; resizing first can miss a quick drag.
+    dragging = true;
     clearTimeout(closeTimer);
-    onDrag();
+    void onDrag().then(started => { if (!started) dragging = false; }).catch(() => dragging = false);
   }
-  function hover(id: string) { clearTimeout(closeTimer); if (!menu) active = id; }
-  function leave() { clearTimeout(closeTimer); if (!menu) closeTimer = setTimeout(() => active = '', 130); }
+  function settleDrag(event: PointerEvent) {
+    // The native command may return before mouse release. Wait for a released
+    // pointer event; native dragging can also defer this until re-entering.
+    if (!dragging || event.buttons !== 0) return;
+    dragging = false;
+    if (!shell.matches(':hover') && !shell.contains(document.activeElement)) leave();
+  }
+  function hover(id: string) { clearTimeout(closeTimer); if (!menu && !dragging) active = id; }
+  function leave() { clearTimeout(closeTimer); if (!menu && !dragging) closeTimer = setTimeout(() => active = '', 130); }
   function openMenu() { clearTimeout(closeTimer); active = ''; menu = !menu; if (menu) queueMicrotask(() => shell.querySelector<HTMLButtonElement>('.pill-menu button')?.focus()); }
   function action(callback: () => void) { menu = false; active = ''; callback(); }
   function keys(event: KeyboardEvent) {
+    if (dragging) return;
     if (event.key === 'Escape') { menu = false; active = ''; menuButton.focus(); event.preventDefault(); }
     if (event.key === 'F10' && event.shiftKey) { event.preventDefault(); if (!menu) openMenu(); }
   }
   onDestroy(() => clearTimeout(closeTimer));
 </script>
 
+<svelte:window onpointerup={settleDrag} onpointermove={settleDrag}/>
+
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Group delegates context shortcuts for its metric buttons.) -->
-<div class="pill-shell" style={`height:${height}px`} class:compressed class:popover={menu || !!detail} class:right-dock={preview ? settings.corner.endsWith('right') : openLeft} class:bottom-dock={preview ? settings.corner.startsWith('bottom') : openUp} class:sample={preview} bind:this={shell} onpointerleave={leave} onpointerenter={() => clearTimeout(closeTimer)} onfocusout={(event) => { if (!shell.contains(event.relatedTarget as Node)) { menu = false; leave(); } }} onkeydown={keys} oncontextmenu={(event) => { event.preventDefault(); if (!menu) openMenu(); }} role="group" aria-label={preview ? 'Sample floating HUD' : 'Floating Neon HUD'}>
+<div class="pill-shell" style={`height:${height}px`} class:compressed class:popover={menu || !!detail} class:right-dock={preview ? settings.corner.endsWith('right') : openLeft} class:bottom-dock={preview ? settings.corner.startsWith('bottom') : openUp} class:sample={preview} bind:this={shell} onpointerleave={leave} onpointerenter={(event) => { settleDrag(event); clearTimeout(closeTimer); }} onfocusout={(event) => { if (!dragging && !shell.contains(event.relatedTarget as Node)) { menu = false; leave(); } }} onkeydown={keys} oncontextmenu={(event) => { event.preventDefault(); if (!menu) openMenu(); }} role="group" aria-label={preview ? 'Sample floating HUD' : 'Floating Neon HUD'}>
   <div class="neon-pill" class:paused>
     <button class="pill-grip" aria-label="Move HUD. Drag, or use arrow keys. Shift moves one pixel." title="Drag to move · arrow keys to nudge" onpointerdown={drag} onkeydown={moveKey}><Icon name="grip" size={12}/></button>
     {#if !compressed}<button class="pill-mascot" aria-label="Open meters and graphs" onclick={() => action(onExpand)} onpointerenter={() => hover('')}><span aria-hidden="true">✦</span><i></i><i></i></button>{/if}
