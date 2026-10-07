@@ -100,7 +100,7 @@ impl Mode {
         }
     }
 }
-pub fn resource_mode(system: &Value, settings: &Value) -> Mode {
+pub fn resource_mode(system: &Value, settings: &Value, now: f64) -> Mode {
     if !flag(&settings["resources"], "adaptive") {
         return Mode::Normal;
     }
@@ -110,11 +110,7 @@ pub fn resource_mode(system: &Value, settings: &Value) -> Mode {
         number(&system["memory"], "total"),
     )
     .unwrap_or(0.0);
-    let hot = component_heat(system, settings)
-        || array(system, "gpus")
-            .iter()
-            .filter_map(|v| number(v, "temperatureCelsius"))
-            .any(|t| t >= temperature_limit(settings));
+    let hot = component_heat(system, settings) || gpu_heat(system, settings, now);
     if hot || ram >= 97.0 {
         Mode::Critical
     } else if cpu >= number(&settings["performance"], "cpuPercent").unwrap_or(90.0)
@@ -133,6 +129,13 @@ pub fn component_heat(system: &Value, settings: &Value) -> bool {
         .iter()
         .filter_map(|v| number(v, "celsius"))
         .any(|t| t >= temperature_limit(settings))
+}
+pub fn gpu_heat(system: &Value, settings: &Value, now: f64) -> bool {
+    array(system, "gpus").iter().any(|g| {
+        text(g, "status") == "live"
+            && number(g, "sampledAt").is_some_and(|t| (0.0..=12.).contains(&(now - t)))
+            && number(g, "temperatureCelsius").is_some_and(|t| t >= temperature_limit(settings))
+    })
 }
 pub fn stress_percent(value: f64, remaining: bool) -> f64 {
     let stress = if remaining { 100.0 - value } else { value };
@@ -293,9 +296,9 @@ mod tests {
     #[test]
     fn heat_and_memory_backoff_without_missing_data_fabrication() {
         let s = json!({"resources":{"adaptive":true},"performance":{"temperatureCelsius":85}});
-        assert_eq!(resource_mode(&json!({}), &s), Mode::Normal);
+        assert_eq!(resource_mode(&json!({}), &s, 1000.), Mode::Normal);
         assert_eq!(
-            resource_mode(&json!({"temperatures":[{"celsius":90}]}), &s),
+            resource_mode(&json!({"temperatures":[{"celsius":90}]}), &s, 1000.),
             Mode::Critical
         );
         assert_eq!(Mode::Critical.interval(250, false), 8000);
@@ -305,7 +308,7 @@ mod tests {
             json!({"resources":{"adaptive":false},"performance":{"temperatureCelsius":85}});
         let hot = json!({"cpu":5,"temperatures":[{"celsius":90}]});
         assert!(component_heat(&hot, &disabled));
-        assert_eq!(resource_mode(&hot, &disabled), Mode::Normal);
+        assert_eq!(resource_mode(&hot, &disabled, 1000.), Mode::Normal);
         assert!(!component_heat(&json!({}), &s));
     }
     #[test]
@@ -314,5 +317,19 @@ mod tests {
         assert_eq!(stress_percent(5., false), 5.);
         assert_eq!(stress_percent(100., true), 0.);
         assert_eq!(stress_percent(100., false), 100.);
+    }
+    #[test]
+    fn heat_on_secondary_gpu_requires_current_live_evidence() {
+        let s = json!({"resources":{"adaptive":true},"performance":{"temperatureCelsius":85}});
+        let mut system = json!({"gpus":[
+            {"status":"live","sampledAt":1000.,"temperatureCelsius":40.},
+            {"status":"live","sampledAt":1000.,"temperatureCelsius":90.}
+        ]});
+        assert!(gpu_heat(&system, &s, 1001.));
+        assert_eq!(resource_mode(&system, &s, 1001.), Mode::Critical);
+        assert!(!gpu_heat(&system, &s, 1013.));
+        assert_eq!(resource_mode(&system, &s, 1013.), Mode::Normal);
+        system["gpus"][1]["status"] = json!("unavailable");
+        assert!(!gpu_heat(&system, &s, 1001.));
     }
 }

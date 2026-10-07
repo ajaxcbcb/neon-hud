@@ -32,8 +32,9 @@ public static class NativeHudCapture {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowTextLength(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, StringBuilder title, int maxCount);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
-    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
 
     public static List<WindowInfo> VisibleWindows(uint launchedPid) {
         var windows = new List<WindowInfo>();
@@ -53,33 +54,28 @@ public static class NativeHudCapture {
     }
 
     public static string Capture(IntPtr window, string path, out int width, out int height, out int distinctColors) {
+        ShowWindowAsync(window, 9);
+        SetForegroundWindow(window);
+        System.Threading.Thread.Sleep(350);
+        if (GetForegroundWindow() != window)
+            throw new InvalidOperationException("Native window could not be brought to the foreground");
         RECT rect;
         if (!GetWindowRect(window, out rect)) throw new InvalidOperationException("GetWindowRect failed");
         width = rect.Right - rect.Left;
         height = rect.Bottom - rect.Top;
         if (width < 64 || height < 32 || width > 4096 || height > 4096)
             throw new InvalidOperationException("Unexpected native window dimensions");
+        int screenX = GetSystemMetrics(76), screenY = GetSystemMetrics(77);
+        int screenWidth = GetSystemMetrics(78), screenHeight = GetSystemMetrics(79);
+        if (rect.Left < screenX || rect.Top < screenY || rect.Right > screenX + screenWidth || rect.Bottom > screenY + screenHeight)
+            throw new InvalidOperationException("Native window extends outside the CI desktop; capture would be clipped");
         using (var bitmap = new Bitmap(width, height)) {
-            bool printed;
             using (var graphics = Graphics.FromImage(bitmap)) {
-                IntPtr dc = graphics.GetHdc();
-                try { printed = PrintWindow(window, dc, 2); }
-                finally { graphics.ReleaseHdc(dc); }
+                graphics.CopyFromScreen(rect.Left, rect.Top, 0, 0, bitmap.Size);
             }
-            string method = "PrintWindow";
             distinctColors = CountColors(bitmap);
-            if (!printed || distinctColors < 3) {
-                ShowWindowAsync(window, 9);
-                SetForegroundWindow(window);
-                System.Threading.Thread.Sleep(300);
-                using (var graphics = Graphics.FromImage(bitmap)) {
-                    graphics.CopyFromScreen(rect.Left, rect.Top, 0, 0, bitmap.Size);
-                }
-                method = "screen-copy";
-                distinctColors = CountColors(bitmap);
-            }
             bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-            return method;
+            return "foreground-screen-copy";
         }
     }
     private static int CountColors(Bitmap bitmap) {
@@ -168,6 +164,7 @@ try {
     $receipt = [ordered]@{
         executable = [IO.Path]::GetFileName($executablePath)
         argument = '--smoke'
+        virtualDesktop = [ordered]@{ x = [NativeHudCapture]::GetSystemMetrics(76); y = [NativeHudCapture]::GetSystemMetrics(77); width = [NativeHudCapture]::GetSystemMetrics(78); height = [NativeHudCapture]::GetSystemMetrics(79) }
         visibleWindowsAtCapture = @($visible | ForEach-Object { [pscustomobject]@{ title = $_.Title; rectangle = [pscustomobject]@{ left = $_.Rect.Left; top = $_.Rect.Top; right = $_.Rect.Right; bottom = $_.Rect.Bottom } } })
         captures = @($captures)
         processTreeAtCapture = @($tree)

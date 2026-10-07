@@ -86,7 +86,10 @@ pub fn gauge(ui: &mut egui::Ui, value: Option<f64>, label: &str, remaining: bool
     for i in 0..40 {
         let a = std::f32::consts::PI * (1.15 + i as f32 / 39. * 1.7);
         let color = if value.is_some_and(|v| i as f64 / 39. * 100. <= v) {
-            stress(super::model::stress_percent(i as f64 / 39. * 100., remaining))
+            stress(super::model::stress_percent(
+                i as f64 / 39. * 100.,
+                remaining,
+            ))
         } else {
             p.panel
         };

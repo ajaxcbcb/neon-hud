@@ -284,7 +284,7 @@ impl App {
                                 }
                             }
                             self.system = v;
-                            let mode = resource_mode(&self.system, &self.profile);
+                            let mode = resource_mode(&self.system, &self.profile, now());
                             if mode == Mode::Critical
                                 || self.mode_since.elapsed() > Duration::from_secs(10)
                             {
@@ -433,9 +433,7 @@ impl App {
                             .is_some_and(|t| (0.0..=12.).contains(&(now() - t)))
                 });
                 let n = g.and_then(|g| number(g, "utilizationPercent"));
-                let hot = g
-                    .and_then(|g| number(g, "temperatureCelsius"))
-                    .is_some_and(|t| t >= temperature_limit(&self.profile));
+                let hot = gpu_heat(&self.system, &self.profile, now());
                 (n, percent(n), n.is_some_and(|v| v >= 90.) || hot)
             }
             "storage" => {
@@ -1064,9 +1062,9 @@ impl App {
                 .with_inner_size([460., 420.])
                 .with_resizable(false)
                 .with_position(if self.smoke {
-                    [710., 160.]
+                    [430., 250.]
                 } else {
-                    [840., 180.]
+                    [500., 180.]
                 }),
             |ctx, _| {
                 if ctx.input(|i| i.viewport().close_requested()) {
