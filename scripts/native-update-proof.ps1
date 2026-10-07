@@ -84,12 +84,15 @@ using System.Runtime.InteropServices;
 using System.Text;
 public static class UpdateProofDesktop {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
     public class Window { public IntPtr Handle; public string Title; public RECT Rect; }
     public delegate bool Callback(IntPtr handle, IntPtr param);
     [DllImport("user32.dll")] static extern bool EnumWindows(Callback callback, IntPtr param);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr handle);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr handle, out uint pid);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT point);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr handle, StringBuilder text, int capacity);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr handle);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -110,8 +113,15 @@ public static class UpdateProofDesktop {
     public static void Click(Window window, int x, int y, bool right) {
         SetForegroundWindow(window.Handle); System.Threading.Thread.Sleep(300);
         if (GetForegroundWindow() != window.Handle) throw new Exception("Own HUD window did not receive focus");
+        // A visible HWND can precede its first egui frame and settled placement.
+        RECT current;
+        if (!GetWindowRect(window.Handle, out current)) throw new Exception("Own HUD window disappeared before input");
+        window.Rect = current;
         if (!SetCursorPos(window.Rect.Left+x, window.Rect.Top+y)) throw new Exception("Cursor positioning failed");
-        System.Threading.Thread.Sleep(80);
+        System.Threading.Thread.Sleep(200);
+        POINT point;
+        if (!GetCursorPos(out point) || WindowFromPoint(point) != window.Handle || GetForegroundWindow() != window.Handle)
+            throw new Exception("Own HUD pointer/focus was not ready for input");
         mouse_event(right ? 8u : 2u, 0, 0, 0, UIntPtr.Zero);
         System.Threading.Thread.Sleep(100);
         mouse_event(right ? 16u : 4u, 0, 0, 0, UIntPtr.Zero);
@@ -255,8 +265,11 @@ try {
     # Positions are from the native layout and its hosted screenshot, not a web UI.
     [UpdateProofDesktop]::Click($settings, 433, 97, $false)
     [UpdateProofDesktop]::Click($settings, 170, 179, $false)
+    Start-Sleep -Milliseconds 300
     [UpdateProofDesktop]::Capture($settings, (Join-Path $outputPath 'update-settings-before-check.png'))
     [UpdateProofDesktop]::Click($settings, 63, 373, $false)
+    Start-Sleep -Milliseconds 200
+    [UpdateProofDesktop]::Capture($settings, (Join-Path $outputPath 'update-settings-check-clicked.png'))
     $newCheckStarted = Wait-UpdateEvent $guiPid 'check_started' $after.metadata.version 5
     $newCurrent = Wait-UpdateEvent $guiPid 'current' $after.metadata.version
     [UpdateProofDesktop]::Capture($settings, (Join-Path $outputPath 'update-settings-after-check.png'))
@@ -292,5 +305,7 @@ try {
     throw
 } finally {
     $env:NEON_HUD_UPDATE_TRACE = $previousUpdateTrace
+    $trace = Join-Path $profilePath 'native-updates/ui-events.jsonl'
+    if (Test-Path -LiteralPath $trace) { Copy-Item -LiteralPath $trace -Destination (Join-Path $outputPath 'ui-events.jsonl') }
     $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $receiptPath -Encoding utf8NoBOM
 }
