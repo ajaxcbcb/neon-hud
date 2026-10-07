@@ -20,7 +20,10 @@ impl NativeBackend {
         }
         // Claude hooks are installed once per account and their CLI writes to
         // the shared app directory. Only preferences use the preview subfolder.
-        let bridge_dir = if config_dir.file_name().is_some_and(|n| n == "native-preview") {
+        let bridge_dir = if config_dir
+            .file_name()
+            .is_some_and(|n| n == "native-preview")
+        {
             config_dir.parent().unwrap_or(&config_dir).to_path_buf()
         } else {
             config_dir.clone()
@@ -125,13 +128,13 @@ mod tests {
         assert_eq!(usages[3]["surface"], "claude-code");
         assert!(providers["attention"].is_array());
         assert!(providers["claudeBridgeEnabled"].is_boolean());
-        let original=std::fs::read(dir.join("settings.json")).unwrap();
-        let preview=NativeBackend::new(dir.join("native-preview")).unwrap();
-        assert_eq!(preview.bridge_dir,dir);
-        let mut profile=preview.load_profile().unwrap();
-        profile["theme"]=Value::String("cyberpunk".into());
+        let original = std::fs::read(dir.join("settings.json")).unwrap();
+        let preview = NativeBackend::new(dir.join("native-preview")).unwrap();
+        assert_eq!(preview.bridge_dir, dir);
+        let mut profile = preview.load_profile().unwrap();
+        profile["theme"] = Value::String("cyberpunk".into());
         preview.save_profile(profile).unwrap();
-        assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(),original);
+        assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(), original);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

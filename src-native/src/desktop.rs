@@ -3,18 +3,31 @@ use eframe::egui;
 use std::path::PathBuf;
 
 pub fn coordinate_scale(native_pixels_per_point: f32) -> f64 {
-    if cfg!(target_os = "macos") { 1. } else { native_pixels_per_point as f64 }
+    if cfg!(target_os = "macos") {
+        1.
+    } else {
+        native_pixels_per_point as f64
+    }
 }
 
 pub fn screens() -> Vec<crate::model::Screen> {
-    display_info::DisplayInfo::all().unwrap_or_default().into_iter().map(|d| crate::model::Screen {
-        name: d.name,
-        origin: [d.x as f64, d.y as f64],
-        size: [d.width as f64, d.height as f64],
-        // CoreGraphics reports points; Windows reports physical pixels.
-        scale: if cfg!(target_os = "macos") { 1. } else { (d.scale_factor as f64).max(1.) },
-        primary: d.is_primary,
-    }).collect()
+    display_info::DisplayInfo::all()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|d| crate::model::Screen {
+            id: format!("display:{}", d.id),
+            name: d.name,
+            origin: [d.x as f64, d.y as f64],
+            size: [d.width as f64, d.height as f64],
+            // CoreGraphics reports points; Windows reports physical pixels.
+            scale: if cfg!(target_os = "macos") {
+                1.
+            } else {
+                (d.scale_factor as f64).max(1.)
+            },
+            primary: d.is_primary,
+        })
+        .collect()
 }
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
@@ -56,7 +69,7 @@ pub fn startup() -> Result<AutoLaunch, String> {
         path,
         auto_launch::MacOSLaunchMode::LaunchAgent,
         &["--minimized"],
-        &[],
+        &[] as &[&str],
         "",
     );
     #[cfg(not(any(windows, target_os = "macos")))]

@@ -239,10 +239,21 @@ impl App {
                         },
                     ));
                     if !self.smoke {
-                        let width = if text(&self.profile, "size") == "compressed" { 160. } else { 280. };
+                        let width = if text(&self.profile, "size") == "compressed" {
+                            160.
+                        } else {
+                            280.
+                        };
                         let scale = desktop::coordinate_scale(ctx.pixels_per_point());
-                        if let Some([x,y]) = restore_position(&self.profile["windowPosition"], &self.screens, [width,56.]) {
-                            ctx.send_viewport_cmd(ViewportCommand::OuterPosition(Pos2::new((x/scale) as f32,(y/scale) as f32)));
+                        if let Some([x, y]) = restore_position(
+                            &self.profile["windowPosition"],
+                            &self.screens,
+                            [width, 56.],
+                        ) {
+                            ctx.send_viewport_cmd(ViewportCommand::OuterPosition(Pos2::new(
+                                (x / scale) as f32,
+                                (y / scale) as f32,
+                            )));
                             self.position_hold = Instant::now() + Duration::from_millis(350);
                         }
                         self.settings = !flag(&self.profile, "completed");
@@ -669,7 +680,11 @@ impl App {
         if self.loaded && self.writable && !self.smoke && Instant::now() >= self.position_hold {
             if let Some(r) = ctx.input(|i| i.viewport().outer_rect) {
                 let scale = desktop::coordinate_scale(ctx.pixels_per_point());
-                if let Some(position) = remember_position([r.min.x as f64*scale,r.min.y as f64*scale], [r.width() as f64*scale,r.height() as f64*scale], &self.screens) {
+                if let Some(position) = remember_position(
+                    [r.min.x as f64 * scale, r.min.y as f64 * scale],
+                    [r.width() as f64 * scale, r.height() as f64 * scale],
+                    &self.screens,
+                ) {
                     if self.profile["windowPosition"] != position {
                         self.profile["windowPosition"] = position;
                         self.dirty();
@@ -1264,7 +1279,7 @@ impl App {
                     .show(ctx, |ui| {
                         ui.horizontal(|ui| {
                             ui.heading(key.to_uppercase());
-                            ui.label(egui::RichText::new(label).monospace().color(if attention {
+                            ui.label(egui::RichText::new(&label).monospace().color(if attention {
                                 p.pop
                             } else {
                                 p.accent

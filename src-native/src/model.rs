@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 
 #[derive(Clone, Debug)]
 pub struct Screen {
+    pub id: String,
     pub name: String,
     pub origin: [f64; 2],
     pub size: [f64; 2],
@@ -11,8 +12,12 @@ pub struct Screen {
 }
 
 pub fn restore_position(saved: &Value, screens: &[Screen], size: [f64; 2]) -> Option<[f64; 2]> {
-    let screen = screens.iter().find(|s| s.name == text(saved, "monitor"))
-        .or_else(|| screens.iter().find(|s| s.primary)).or_else(|| screens.first())?;
+    let screen = screens
+        .iter()
+        .find(|s| s.id == text(saved, "monitor"))
+        .or_else(|| screens.iter().find(|s| s.name == text(saved, "monitor")))
+        .or_else(|| screens.iter().find(|s| s.primary))
+        .or_else(|| screens.first())?;
     let x = number(saved, "x")? * screen.scale;
     let y = number(saved, "y")? * screen.scale;
     Some([
@@ -24,14 +29,17 @@ pub fn restore_position(saved: &Value, screens: &[Screen], size: [f64; 2]) -> Op
 pub fn remember_position(point: [f64; 2], size: [f64; 2], screens: &[Screen]) -> Option<Value> {
     let overlap = |s: &Screen| {
         ((point[0] + size[0]).min(s.origin[0] + s.size[0]) - point[0].max(s.origin[0])).max(0.)
-            * ((point[1] + size[1]).min(s.origin[1] + s.size[1]) - point[1].max(s.origin[1])).max(0.)
+            * ((point[1] + size[1]).min(s.origin[1] + s.size[1]) - point[1].max(s.origin[1]))
+                .max(0.)
     };
-    let screen = screens.iter().max_by(|a,b| overlap(a).total_cmp(&overlap(b)))?;
+    let screen = screens
+        .iter()
+        .max_by(|a, b| overlap(a).total_cmp(&overlap(b)))?;
     let round = |n: f64| (n * 2.).round() / 2.;
     Some(serde_json::json!({
         "x": round((point[0] - screen.origin[0]) / screen.scale),
         "y": round((point[1] - screen.origin[1]) / screen.scale),
-        "monitor": screen.name,
+        "monitor": screen.id,
     }))
 }
 
@@ -201,16 +209,52 @@ mod tests {
     #[test]
     fn placement_tracks_negative_monitor_origins_and_dpi() {
         let screens = vec![
-            Screen { name:"Main".into(),origin:[0.,0.],size:[1920.,1080.],scale:1.,primary:true },
-            Screen { name:"Left".into(),origin:[-3840.,-200.],size:[3840.,2160.],scale:2.,primary:false },
+            Screen {
+                id: "display:1".into(),
+                name: "Main".into(),
+                origin: [0., 0.],
+                size: [1920., 1080.],
+                scale: 1.,
+                primary: true,
+            },
+            Screen {
+                id: "display:2".into(),
+                name: "Left".into(),
+                origin: [-3840., -200.],
+                size: [3840., 2160.],
+                scale: 2.,
+                primary: false,
+            },
         ];
-        let saved=remember_position([-3440.,100.],[320.,112.],&screens).unwrap();
-        assert_eq!(saved,json!({"x":200.,"y":150.,"monitor":"Left"}));
-        assert_eq!(restore_position(&saved,&screens,[160.,56.]),Some([-3440.,100.]));
-        let changed=vec![Screen { name:"Left".into(),origin:[-1920.,0.],size:[1920.,1080.],scale:1.,primary:true }];
-        assert_eq!(restore_position(&saved,&changed,[160.,56.]),Some([-1720.,150.]));
-        let offscreen=json!({"x":9999.,"y":9999.,"monitor":"Unplugged"});
-        assert_eq!(restore_position(&offscreen,&screens,[280.,56.]),Some([1640.,1024.]));
+        let saved = remember_position([-3440., 100.], [320., 112.], &screens).unwrap();
+        assert_eq!(saved, json!({"x":200.,"y":150.,"monitor":"display:2"}));
+        assert_eq!(
+            restore_position(&saved, &screens, [160., 56.]),
+            Some([-3440., 100.])
+        );
+        let changed = vec![Screen {
+            id: "display:2".into(),
+            name: "Left".into(),
+            origin: [-1920., 0.],
+            size: [1920., 1080.],
+            scale: 1.,
+            primary: true,
+        }];
+        assert_eq!(
+            restore_position(&saved, &changed, [160., 56.]),
+            Some([-1720., 150.])
+        );
+        let offscreen = json!({"x":9999.,"y":9999.,"monitor":"Unplugged"});
+        assert_eq!(
+            restore_position(&offscreen, &screens, [280., 56.]),
+            Some([1640., 1024.])
+        );
+        let mut duplicates = screens.clone();
+        duplicates[1].name = "Main".into();
+        let saved = remember_position([-3440., 100.], [320., 112.], &duplicates).unwrap();
+        assert_eq!(restore_position(&saved, &duplicates, [160., 56.]), Some([-3440., 100.]));
+        let legacy = json!({"x":10.,"y":20.,"monitor":"Main"});
+        assert_eq!(restore_position(&legacy, &screens, [160., 56.]), Some([10., 20.]));
     }
     fn usage(at: f64, used: f64, reset: f64) -> Value {
         json!({"surface":"codex","state":"connected","fetchedAt":at,"windows":[{"label":"5 hours","minutes":300,"usedPercent":used,"resetsAt":reset}]})
