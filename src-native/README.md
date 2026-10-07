@@ -17,7 +17,7 @@ In the floating pill, drag the dotted grip to move, double click it to compress,
 
 For an upgrade, leave the profile and shared bridge data intact, use the existing updater when supported, and retire the previous package only after the replacement launches. A portable ZIP has no NSIS setup/uninstaller. Keep bundled licenses and notices; update signatures are separate from OS code signing.
 
-Existing profiles retain Pill unless Nook is selected in Preferences. Layout lives in `nook-productivity.json` under `presentation.mode`; other settings, notes, tasks and timers must be retained when changing it. The target alpha.6 executable was quarantined by Defender, so its launch/layout acceptance is pending. [Development signing](../docs/releases/MAINTENANCE.md#self-signed-windows-development-build) produces a separate self-signed test package without public publisher trust or Defender clearance.
+Existing profiles retain Pill unless Nook is selected in Preferences. Layout lives in `nook-productivity.json` under `presentation.mode`; other settings, notes, tasks and timers must be retained when changing it. The target alpha.6 executable was quarantined by Defender, so its launch/layout acceptance is pending. The separate [development-signed build](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed signature/timestamp verification, exact temporary certificate/key cleanup and real Nook input. [Development signing](../docs/releases/MAINTENANCE.md#self-signed-windows-development-build) does not establish public publisher trust or Defender clearance, and this test package is outside the automatic-update feed.
 
 ## Interaction
 

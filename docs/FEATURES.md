@@ -10,6 +10,8 @@ Notes include B/I/U; tasks include completion and favourites; deadline timers in
 
 [Download alpha.6](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6) · [Release notes](releases/v0.2.0-alpha.6.md) · [Native setup and controls](../src-native/README.md) · [Reference evidence](../reference-learning/notchnook/study.md) · [Validation](VALIDATION.md)
 
+The separate Windows [self-signed development build](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed timestamped Authenticode verification, temporary certificate/key cleanup and physical Nook interaction checks. It is a test artifact, outside public release assets and the updater feed. The target alpha.6 Defender quarantine remains unresolved; a development signature does not establish publicly trusted publisher status or target runtime acceptance.
+
 ### Measurements and attention
 
 | Metric | Numerical reading | Visual and attention behavior |
