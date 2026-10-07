@@ -3,10 +3,14 @@
 ## Unreleased — native Nook
 
 - Native black capsule with hover peek, click expansion, pinning, Escape dismissal and inward screen placement. The floating pill remains selectable and retains its saved position.
+- Shallow Home widgets show media, calendar, notes, timer, tasks and quick actions together, with Nook/Tray navigation, fine dividers and a numeric system/AI rail. Compact screens keep additional widgets accessible through focused icon views.
+- Native media controls and playback progress, battery status, opt-in camera mirror and local ICS calendars; macOS also offers EventKit Calendar and opt-in Music control. Permission failures and unavailable sources are shown explicitly.
+- Timer wheels, note B/I/U formatting, task favourites and pagination fit inside the native panel. ICS recurrence handles timezones and local-midnight all-day events across daylight-saving changes.
+- Camera previews stop when hidden or under pressure and release cached textures. Recoverable save errors leave the utility worker running; camera startup waits for an actual validated frame before reporting connected.
 - Instruments and AI tabs retain numerical system readings, gradient stress bars, history, five-hour reset windows and measured allowance drain. Local notes, tasks, deadline timers and file references use separate bounded, recoverable storage.
 - Saved Codex connection intent and last-known allowance survive retry failures. Stale readings show their original timestamp and connection state; explicit disconnect clears them.
 - Bridge migration recognises owned Windows version folders and macOS versioned app bundles while preserving foreign Claude configuration.
-- Added source regressions for timer state retention, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls and native frame captures. Reference playback, integrated validation and target installation remain pending; this section is not a published-release claim.
+- Added source regressions for timer/state migration, camera frame bounds, calendar recurrence, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls, saved note/task/timer checks and native frame captures. Five official clips were observed at representative frames; exact motion timing, integrated validation and target installation remain pending. This section is not a published-release claim.
 
 ## [0.2.0-alpha.4] - 2026-10-07
 

@@ -37,6 +37,10 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>CFBundleVersion</key><string>$short_version</string>
   <key>NeonHudNativeVersion</key><string>$version</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSCameraUsageDescription</key><string>Show your camera in the Nook mirror when you enable it.</string>
+  <key>NSCalendarsUsageDescription</key><string>Show your upcoming events in the Nook calendar when you connect it.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Read upcoming events for the Nook calendar. Neon HUD does not create or edit events.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Show and control the currently playing track in Music when you connect media.</string>
 </dict></plist>
 EOF
 cat > "$out/PREVIEW.txt" <<EOF

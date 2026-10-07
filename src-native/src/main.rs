@@ -4,9 +4,11 @@ mod desktop;
 mod model;
 mod nook;
 mod nook_ui;
+mod nook_widgets;
 mod paint;
 mod productivity;
 mod updater;
+mod utilities;
 
 use backend::{Command, Event, Worker};
 use desktop::{Tray, TrayAction};
@@ -48,7 +50,7 @@ fn main() -> eframe::Result<()> {
                 arg.strip_prefix("--smoke-nook-tab=")
                     .and_then(|value| value.parse::<usize>().ok())
             })
-            .map(|tab| tab.min(5))
+            .map(|tab| tab.min(10))
     } else {
         None
     };
@@ -188,6 +190,9 @@ struct App {
     profile_dir: PathBuf,
     productivity: Option<productivity::Controller>,
     productivity_status: String,
+    utilities: utilities::Service,
+    utility_snapshot: utilities::Snapshot,
+    utility_preferences: Option<utilities::Preferences>,
     timer_notice_until: Instant,
     nook_ui: nook_ui::NookUi,
     update_worker: updater::Worker,
@@ -312,6 +317,9 @@ impl App {
             profile_dir: dir,
             productivity,
             productivity_status,
+            utilities: utilities::Service::new(ctx.clone()),
+            utility_snapshot: utilities::Snapshot::default(),
+            utility_preferences: None,
             timer_notice_until: Instant::now(),
             nook_ui: nook_ui::NookUi::new(ctx.clone(), smoke && !smoke_nook, smoke_nook_tab),
             update_status: update_error
@@ -705,8 +713,15 @@ impl App {
                     }
                 }
             }
+            // A recoverable save failure keeps the live utility worker available.
+            if self.quitting
+                && self.productivity.as_ref().is_none_or(|c| c.ready_to_stop())
+            {
+                self.utilities.stop();
+            }
         }
-        let utilities_stopped = self.productivity.as_ref().is_none_or(|c| c.ready_to_stop());
+        let utilities_stopped = self.productivity.as_ref().is_none_or(|c| c.ready_to_stop())
+            && self.utilities.ready_to_stop();
         if self.quitting
             && !self.save_pending
             && (!self.writable || self.saved == self.revision)
@@ -2354,6 +2369,15 @@ impl eframe::App for App {
         }
         self.events(ctx);
         self.productivity_events(ctx);
+        if let Some(controller) = &self.productivity {
+            if !controller.loading() && self.utility_preferences.as_ref() != Some(&controller.state.utilities)
+                && self.utilities.configure(controller.state.utilities.clone()) {
+                self.utility_preferences = Some(controller.state.utilities.clone());
+            }
+        }
+        if let Some(snapshot) = self.utilities.snapshot() {
+            self.utility_snapshot = snapshot;
+        }
         self.update_events();
         self.palette().apply(ctx);
         if let Some(tray) = &self.tray {
@@ -2380,6 +2404,22 @@ impl eframe::App for App {
         }
         self.poll();
         self.hud(ctx);
+        let utilities_visible = !self.hidden && !self.quitting && self.is_nook()
+            && self.nook_ui.presentation.phase != nook::Phase::Collapsed;
+        let mirror_requested = self.nook_ui.mirror_enabled
+            && matches!(self.nook_ui.tab, nook_ui::Tab::Home | nook_ui::Tab::Mirror);
+        let under_pressure = self.mode != Mode::Normal;
+        self.utilities.activity(utilities_visible, mirror_requested, under_pressure);
+        if !utilities_visible || !mirror_requested || under_pressure
+            || self.utility_snapshot.mirror.frame.is_none()
+        {
+            self.nook_ui.mirror_texture = None;
+            self.nook_ui.mirror_frame = 0;
+        }
+        if self.utility_snapshot.media.artwork.is_none() {
+            self.nook_ui.artwork_texture = None;
+            self.nook_ui.artwork_frame = 0;
+        }
         self.controls_window(ctx);
         self.settings_window(ctx);
         self.detail_window(ctx);

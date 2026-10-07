@@ -6,7 +6,7 @@ param(
     [switch]$ContextMenu,
     [switch]$QuitMenu,
     [switch]$Nook,
-    [ValidateRange(-1, 5)][int]$NookTab = -1,
+    [ValidateRange(-1, 10)][int]$NookTab = -1,
     [switch]$NookInteraction
 )
 $ErrorActionPreference = 'Stop'
@@ -55,6 +55,7 @@ public static class NativeHudCapture {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern short VkKeyScan(char character);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern uint ExtractIconEx(string file, int index, IntPtr[] large, IntPtr[] small, uint count);
     [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr icon);
@@ -67,6 +68,22 @@ public static class NativeHudCapture {
     public static void Escape() {
         keybd_event(0x1B, 0, 0, UIntPtr.Zero);
         keybd_event(0x1B, 0, 2, UIntPtr.Zero);
+    }
+    public static void TypeText(string value) {
+        foreach (char character in value) {
+            short mapped = VkKeyScan(character);
+            if (mapped == -1 || (mapped & 0xFE00) != 0) throw new InvalidOperationException("Unsupported smoke input character");
+            bool shift = (mapped & 0x0100) != 0;
+            if (shift) keybd_event(0x10, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)mapped, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)mapped, 0, 2, UIntPtr.Zero);
+            if (shift) keybd_event(0x10, 0, 2, UIntPtr.Zero);
+            System.Threading.Thread.Sleep(15);
+        }
+    }
+    public static void Enter() {
+        keybd_event(0x0D, 0, 0, UIntPtr.Zero);
+        keybd_event(0x0D, 0, 2, UIntPtr.Zero);
     }
     public static bool ProgramIcon(string executable, string path) {
         var large = new IntPtr[1]; var small = new IntPtr[1];
@@ -211,7 +228,7 @@ try {
 
     $nookChecks = @()
     if ($NookInteraction) {
-        function Wait-NookState([string]$Phase, [int]$Width, [int]$Height, [string]$Tab = 'Instruments') {
+        function Wait-NookState([string]$Phase, [int]$Width, [int]$Height, [string]$Tab = 'Nook') {
             $stateDeadline = (Get-Date).AddSeconds(2)
             do {
                 Start-Sleep -Milliseconds 60
@@ -219,7 +236,7 @@ try {
                 if ($process.HasExited) { throw 'Nook exited during physical interaction' }
                 $window = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object { $_.Title -eq 'Neon HUD Native' } | Select-Object -First 1
                 $trace = Get-Content -LiteralPath $stderr -Raw
-                $states = [regex]::Matches($trace, 'NEON_NOOK phase=\w+ tab=\w+')
+                $states = [regex]::Matches($trace, 'NEON_NOOK phase=\w+ tab=[^\r\n]+')
                 $lastState = if ($states.Count -gt 0) { $states[$states.Count-1].Value } else { '' }
                 $ready = $null -ne $window -and $window.Rect.Right-$window.Rect.Left -eq $Width -and $window.Rect.Bottom-$window.Rect.Top -eq $Height -and $lastState -eq "NEON_NOOK phase=$Phase tab=$Tab"
             } while (-not $ready -and (Get-Date) -lt $stateDeadline)
@@ -239,33 +256,55 @@ try {
         $nookChecks += Save-NookFrame $hudWindow 'peek'
         [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+20) | Out-Null
         [NativeHudCapture]::Click($false)
-        $hudWindow = Wait-NookState 'expanded' 620 288
+        $hudWindow = Wait-NookState 'expanded' 900 192
         $nookChecks += Save-NookFrame $hudWindow 'expanded'
         [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-54, $hudWindow.Rect.Top+21) | Out-Null
         [NativeHudCapture]::Click($false)
-        $hudWindow = Wait-NookState 'pinned' 620 288
+        $hudWindow = Wait-NookState 'pinned' 900 192
         [NativeHudCapture]::SetCursorPos([NativeHudCapture]::GetSystemMetrics(76)+10, [NativeHudCapture]::GetSystemMetrics(77)+[NativeHudCapture]::GetSystemMetrics(79)-10) | Out-Null
         Start-Sleep -Milliseconds 750
-        $hudWindow = Wait-NookState 'pinned' 620 288
+        $hudWindow = Wait-NookState 'pinned' 900 192
         $nookChecks += Save-NookFrame $hudWindow 'pinned-outside'
         [NativeHudCapture]::Escape()
         $hudWindow = Wait-NookState 'collapsed' 240 40
         $nookChecks += Save-NookFrame $hudWindow 'escape'
         [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+20) | Out-Null
         [NativeHudCapture]::Click($false)
-        $hudWindow = Wait-NookState 'expanded' 620 288
+        $hudWindow = Wait-NookState 'expanded' 900 192
         [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-54, $hudWindow.Rect.Top+21) | Out-Null
         [NativeHudCapture]::Click($false)
-        $hudWindow = Wait-NookState 'pinned' 620 288
-        $tabs = @('Instruments','AI','Notes','Tasks','Timer','Files')
-        foreach ($tabIndex in 0..5) {
-            $tabWidth = [Math]::Min((620-34)/6,98)
-            [NativeHudCapture]::SetCursorPos([int]($hudWindow.Rect.Left+17+($tabIndex+0.5)*$tabWidth), $hudWindow.Rect.Top+58) | Out-Null
+        $hudWindow = Wait-NookState 'pinned' 900 192
+        $tabs = @('Nook','Tray','Instruments','AI','Notes','Tasks','Timer','Media','Calendar','Mirror','Quick actions')
+        $tabCenters = @(54,114,175,213,251,289,327,365,403,441,479)
+        foreach ($tabIndex in 0..10) {
+            [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+$tabCenters[$tabIndex], $hudWindow.Rect.Top+21) | Out-Null
+            Start-Sleep -Milliseconds 80
             [NativeHudCapture]::Click($false)
-            $hudWindow = Wait-NookState 'pinned' 620 288 $tabs[$tabIndex]
+            $hudWindow = Wait-NookState 'pinned' 900 192 $tabs[$tabIndex]
             Start-Sleep -Milliseconds 200
-            $nookChecks += Save-NookFrame $hudWindow ($tabs[$tabIndex].ToLowerInvariant())
+            $nookChecks += Save-NookFrame $hudWindow ($tabs[$tabIndex].ToLowerInvariant().Replace(' ','-'))
+            if ($tabs[$tabIndex] -eq 'Notes' -or $tabs[$tabIndex] -eq 'Tasks') {
+                [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+45, $hudWindow.Rect.Top+61) | Out-Null
+                Start-Sleep -Milliseconds 80
+                [NativeHudCapture]::Click($false)
+                [NativeHudCapture]::TypeText($(if ($tabs[$tabIndex] -eq 'Notes') { 'Nook cloud note' } else { 'Nook cloud task' }))
+                if ($tabs[$tabIndex] -eq 'Tasks') { [NativeHudCapture]::Enter() }
+                Start-Sleep -Milliseconds 700
+            }
+            if ($tabs[$tabIndex] -eq 'Timer') {
+                [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-31, $hudWindow.Rect.Top+85) | Out-Null
+                Start-Sleep -Milliseconds 80
+                [NativeHudCapture]::Click($false)
+                Start-Sleep -Milliseconds 700
+                $nookChecks += Save-NookFrame $hudWindow 'timer-running'
+            }
         }
+        $utilityPath = Join-Path ([IO.Path]::GetTempPath()) "neon-native-smoke-$($process.Id)/nook-productivity.json"
+        $utilityState = Get-Content -LiteralPath $utilityPath -Raw | ConvertFrom-Json
+        if ($utilityState.note -ne 'Nook cloud note' -or @($utilityState.tasks | Where-Object text -eq 'Nook cloud task').Count -ne 1 -or $utilityState.timer.status -ne 'running') {
+            throw 'Physical Nook note/task/timer actions were not retained in the saved utility state'
+        }
+        $nookChecks += [pscustomobject]@{ state='saved-controls'; realPointerInput=$true; realKeyboardInput=$true; noteRetained=$true; taskRetained=$true; timerRunning=$true }
     }
 
     $hoverChecks = @()

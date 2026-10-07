@@ -11,17 +11,22 @@ same native window. White typography, restrained grey dividers, icon-led tabs
 and a quiet background keep it small; selected instruments retain the user's
 neon colours. Hover peeks, click opens, pin holds and Escape closes. Its saved
 anchor is separate from the existing pill position. Geometry and timing are
-starting values until representative official playback is observed; tune them
-against the study before declaring a reference match.
+starting values informed by representative official frames; exact motion timing
+is still unknown. Inspect native frames before declaring a reference match.
 
 An optional black compact Nook with native inward expansion, a pinned state,
-keyboard dismissal, interactive tabs and measured reference motion. Keep the
+keyboard dismissal, interactive tabs and bounded expansion motion. Keep the
 movable/compressible floating pill and custom three-step Settings window. Store
 Nook preferences separately from the existing metric/provider profile and retain
 the pill's saved position. The default for a new Nook preference is Nook.
 
-The expanded panel provides system instruments, AI allowances and local utility
-tabs. Core readings remain numerical, with gradient gauges/bars and attention
+The expanded Home panel shows media, calendar, notes, timer, tasks and quick
+actions together, separated by fine grey dividers. A compact monitor layout
+keeps media, notes and timer visible; the other widgets remain reachable from
+the icon navigation. Nook and Tray are the primary choices. Focused utility,
+system and AI views provide deeper controls without an outer scrolling page.
+The bottom readings rail remains visible on Home. Core readings remain numerical,
+with gradient gauges/bars and attention
 icons. CPU/RAM/GPU/network/multiple selected drives, provider-reported five-hour
 windows, reset times, average drain and fast depletion, thermal/performance
 attention, adaptive sampling, connectors, tray, startup and signed update remain
@@ -32,17 +37,26 @@ backup recovery and revision acknowledgements. Timers use epoch deadlines rather
 than frame counts; completion is persisted before alerting. Files remain in their
 original locations and missing references are identifiable.
 
-Media, calendar, mirror, shortcuts and battery/device activity require real
-platform adapters and explicit capability/error states. Do not substitute a fake
-live card for an unavailable integration. OS-specific differences must be stated
-in the feature notes.
+Windows media uses its current media session; macOS media opts into controlling
+Music through public Apple Events. macOS Calendar uses EventKit permission;
+Windows accepts a local ICS file because this unpackaged application cannot
+assume native-calendar access. Both platforms support bounded ICS recurrence
+and timezone expansion. Power uses native battery status. Mirror is explicitly
+enabled and pauses when hidden or under resource pressure. Camera startup is
+reported until a validated frame arrives. Quick actions open real HUD features.
+
+The utility worker uses bounded queues, cached snapshots and slower polling
+under pressure. A macOS camera helper owns AVFoundation calls and callback
+cleanup; cancellation does not wait on a stalled platform call. A helper that
+never returns can remain busy, so macOS camera quit/start/stop runtime acceptance
+is required. No synthetic live values substitute for an unavailable adapter.
 
 ## Execution and checks
 
-1. Finish the public alpha.3-to-alpha.4 real GUI signed-update proof, preserving
-   the known native icon/menu/hidden-shutdown gates.
-2. Observe official demo, timer, task, note and music clips under admitted browser
-   scope; document actual states, geometry and motion before claiming fidelity.
+1. Retain the passed public alpha.3-to-alpha.4 GUI signed-update proof and native
+   icon/menu/hidden-shutdown gates; test the next published update separately.
+2. Use the observed representative official frames; record exact timings as
+   unknown until measured, and compare integrated native frames before fidelity.
 3. Integrate pure presentation state plus separate productivity worker. Retain
    save/normal-Quit/updater handoff and profile boundaries.
 4. Add utility adapters with truthful capabilities. Keep idle work bounded,
@@ -53,7 +67,7 @@ in the feature notes.
 6. Publish release notes and signed artifacts, then update the target machine
    only under the central coordinator's fresh exact-phase admission.
 
-Acceptance remains open until reference observation, integrated runtime checks
+Acceptance remains open until native frame comparison, integrated runtime checks
 and target-machine installation pass. Source-only utility code is not runtime
 proof. Strict connector-inclusive single-process operation remains a separate
 open gate in the existing native implementation.

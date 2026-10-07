@@ -133,6 +133,8 @@ pub struct ProductivityState {
     pub files: Vec<FileReference>,
     #[serde(default)]
     pub presentation: PresentationPreference,
+    #[serde(default)]
+    pub utilities: crate::utilities::Preferences,
 }
 
 impl Default for ProductivityState {
@@ -145,6 +147,7 @@ impl Default for ProductivityState {
             timer: Timer::Idle,
             files: Vec::new(),
             presentation: PresentationPreference::default(),
+            utilities: crate::utilities::Preferences::default(),
         }
     }
 }
@@ -898,6 +901,25 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         panic!("Timed out waiting for productivity worker event");
+    }
+    #[test]
+    fn utility_preferences_upgrade_retains_existing_productivity() {
+        let mut original = ProductivityState::default();
+        original.set_note("Keep this note".into()).unwrap();
+        original.add_task("Keep this task".into()).unwrap();
+        original.timer.start(1000, 300_000).unwrap();
+        original.presentation.pinned = true;
+        let mut legacy = serde_json::to_value(&original).unwrap();
+        legacy.as_object_mut().unwrap().remove("utilities");
+        let mut upgraded: ProductivityState = serde_json::from_value(legacy).unwrap();
+        assert_eq!(upgraded, original);
+        upgraded.utilities.note_bold = true;
+        upgraded.utilities.note_italic = true;
+        upgraded.utilities.calendar_path = Some(PathBuf::from("agenda.ics"));
+        let (dir, store) = test_store();
+        store.save(&upgraded).unwrap();
+        assert_eq!(store.load().unwrap().state, upgraded);
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn task_crud_and_bounds() {
