@@ -1,19 +1,19 @@
 {
-  "version": "0.1.2",
-  "notes": "Tiny turbo: GPU adapters, adjustable 250ms sampling and finite display-synced meters. See the 0.1.2 release notes on GitHub.",
-  "pub_date": "2026-10-07T03:37:23Z",
+  "version": "0.1.3",
+  "notes": "Quiet upgrades: retained profiles, minimize-to-tray and optional signed automatic installation. See the 0.1.3 release notes on GitHub.",
+  "pub_date": "2026-10-07T05:12:02Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySG84eVJJUnFvcFBXM3IwZFZQUUV3aE01MmhDSG1qWTI3dHE3WklaaEJWVXpaZ0ZoK3VpK2hsdmVraU1KYmxqMzJqR3d5UUttcDdJSzFObmpkbzFkUVFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQ0MTI0CWZpbGU6TmVvbiBIVURfMC4xLjJfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMS4yCmN6Rk9sYlVibVZHZVVqWU5zeGZwY2IyUXVoSVo5S1QxNXB2dnI4ODBwY041a25KRVZFNERVOWFxN0hBSmUxKy9IcXFiNENVd0hKYkpTU2J1VHVKYURnPT0K",
-      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.2/Neon.HUD_0.1.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySGlxQXpyNzhCci90Q1N4am9oM1k3alhuUnN2NkxmMTJlKy9vTk5mQVhEd3p3THJqV0RaNGVzckFGV0tlOEwwMkZWOFFwYkkyUE14VWdMMU9vTGVNdWcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQ5ODQwCWZpbGU6TmVvbiBIVURfMC4xLjNfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMS4zCms0M1lwZW5scDRscUtJdlpVd2NyVy9YWkNpRi9EUzdIc2VvTld0OGZGV0Nva282eDZ3TW96Z0RmeTJ2WU5kRE5sNWpVYk44a3BvbnJWb2RJb1JldkFBPT0K",
+      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.3/Neon.HUD_0.1.3_x64-setup.exe"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySG4ya3owMExpTnlVZ2Q3SHhHMVhXVjgxZUtmWGhjbnQ2OFpLY2k2THpHWEkrSThEajFkQzZHNG8rLzc5ZllYVE9XaWh5a3hNMUFNUW1hT3ZKL3h6dXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQ0MDk4CWZpbGU6TmVvbiBIVUQuYXBwLnRhci5negl2ZXJzaW9uOjAuMS4yCmNwZTQ3SE1pTGgydno3a1FtREg2V21nVTZ1TDBHVzdIVEw1Wmd2ZlBWb01oWHlyQ3RTSWQvb3o0RXVZL0Q1R0NpdmJqeGdqZXFBQVlPRmIrZGwvTUR3PT0K",
-      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.2/Neon.HUD.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySHY1WkRvd2NCTFRGNUJLM1pYVHVtL1FQQ0pLaGlPbVBvbGFXODg4UTBPb0svQlMrakkzZVNqaEJxZ0JUSWZITXdYSHZwYitjbm1hUlgyOHBzSFJpQlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQ5Nzg1CWZpbGU6TmVvbiBIVUQuYXBwLnRhci5negl2ZXJzaW9uOjAuMS4zCmJyeHk5RUdHRlRwTnNlWm5uU1BISFhROForVWZSZkVpcllvWkFXN3MxaExOVlZFVGFzdWV4eVc2UzhCNVQ0TDE1bkRuTGdhdFBMbTJXSlVJeXNjTUF3PT0K",
+      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.3/Neon.HUD.app.tar.gz"
     },
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySG4ya3owMExpTnlVZ2Q3SHhHMVhXVjgxZUtmWGhjbnQ2OFpLY2k2THpHWEkrSThEajFkQzZHNG8rLzc5ZllYVE9XaWh5a3hNMUFNUW1hT3ZKL3h6dXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQ0MDk4CWZpbGU6TmVvbiBIVUQuYXBwLnRhci5negl2ZXJzaW9uOjAuMS4yCmNwZTQ3SE1pTGgydno3a1FtREg2V21nVTZ1TDBHVzdIVEw1Wmd2ZlBWb01oWHlyQ3RTSWQvb3o0RXVZL0Q1R0NpdmJqeGdqZXFBQVlPRmIrZGwvTUR3PT0K",
-      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.2/Neon.HUD.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTeGdxR0o0UmIySHY1WkRvd2NCTFRGNUJLM1pYVHVtL1FQQ0pLaGlPbVBvbGFXODg4UTBPb0svQlMrakkzZVNqaEJxZ0JUSWZITXdYSHZwYitjbm1hUlgyOHBzSFJpQlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMzQ5Nzg1CWZpbGU6TmVvbiBIVUQuYXBwLnRhci5negl2ZXJzaW9uOjAuMS4zCmJyeHk5RUdHRlRwTnNlWm5uU1BISFhROForVWZSZkVpcllvWkFXN3MxaExOVlZFVGFzdWV4eVc2UzhCNVQ0TDE1bkRuTGdhdFBMbTJXSlVJeXNjTUF3PT0K",
+      "url": "https://github.com/ajaxcbcb/neon-hud/releases/download/v0.1.3/Neon.HUD.app.tar.gz"
     }
   }
 }

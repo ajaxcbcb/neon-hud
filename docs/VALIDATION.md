@@ -6,7 +6,10 @@ Checked on 7 October 2026.
 
 - Local frontend checks passed with zero Svelte errors/warnings, 63 tests across 12 files and a successful production build. Dependency audit reported zero vulnerabilities.
 - Tests cover quiet restart eligibility, fresh pressure checks, signature/download boundaries, failed automatic installation/manual retry, a changed update preference during a pending check, pending profile flush, serialized writes and recovery after write failure.
-- Native legacy-profile migration, malformed-file retention, Windows minimize-to-tray and both signed platform packages are awaiting cloud CI. Local native installation remains queued with the shared host coordinator; the installed app is still 0.1.0.
+- [Final native CI](https://github.com/ajaxcbcb/neon-hud/actions/runs/37574695191), source `44b579e2d8d2fa796990b8d20138fc917a76125e`, passed 29 Windows and 26 Mac tests, including legacy-profile migration and malformed-file retention. Windows launch and minimize-to-tray passed: the window hid while the app remained running.
+- Independent review passed after two bypassed save paths were routed through the serialized settings writer.
+- The [public v0.1.3 preview](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.1.3) contains all five CI artifacts and SHA256SUMS.txt. All six uploaded asset digests matched locally; both updater payload signatures and trusted comments verified against the configured public key. The Windows setup SHA-256 is `cc500b59f14a2e07a7be1cd5b120b937e33bde1fa1e4a83d56b2a3e459b21e71`.
+- The updater manifest targets Windows x64 and universal Intel/Apple Silicon Mac payloads. Local native installation remains queued with the shared host coordinator; the installed app is still 0.1.0. Installed automatic-update execution and Mac runtime remain unverified.
 
 ## 0.1.2 GPU and fast-sampling increment
 
