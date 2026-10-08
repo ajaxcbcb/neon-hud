@@ -2279,6 +2279,7 @@ name = "neon-hud"
 version = "0.1.4"
 dependencies = [
  "default-net",
+ "open",
  "serde",
  "serde_json",
  "sha2",

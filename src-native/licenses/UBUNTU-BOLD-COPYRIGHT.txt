@@ -1,0 +1,7 @@
+Copyright 2011 Canonical Ltd.  Licensed under the Ubuntu Font Licence 1.0
+
+This notice is reproduced from the embedded Ubuntu-Bold.ttf name table
+(copyright record, name ID 0). The unchanged font is from Google Fonts commit
+a50de97857f6626d6628c91e6a34c12ee8a16ede, ufl/ubuntu/Ubuntu-Bold.ttf.
+
+The full Ubuntu Font Licence 1.0 is in UBUNTU-BOLD-LICENSE.txt.

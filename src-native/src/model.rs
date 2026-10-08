@@ -1,0 +1,591 @@
+use serde_json::Value;
+use std::collections::{HashMap, VecDeque};
+
+#[derive(Clone, Debug)]
+pub struct Screen {
+    pub id: String,
+    pub name: String,
+    pub origin: [f64; 2],
+    pub size: [f64; 2],
+    pub scale: f64,
+    pub primary: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HoverPlacement {
+    pub position: [f64; 2],
+    pub size: [f64; 2],
+}
+
+pub struct ControlsLayout {
+    pub compact: bool,
+    pub header_height: f32,
+    pub buttons: [[f32; 4]; 6],
+}
+
+/// Keep every action reachable when the monitor limits the popup's size.
+pub fn controls_layout(size: [f32; 2]) -> Option<ControlsLayout> {
+    if size.iter().any(|v| !v.is_finite() || *v <= 0.) {
+        return None;
+    }
+    let [width, height] = size;
+    let compact = width < 220. || height < 240.;
+    let columns = if compact { 2 } else { 1 };
+    let rows = 6 / columns;
+    let padding = if compact { 4. } else { 12_f32 }
+        .min(width / 20.)
+        .min(height / 20.);
+    let gap = if compact { 2. } else { 4_f32 }
+        .min(width / 40.)
+        .min(height / 40.);
+    let header_height = if compact { 24. } else { 42_f32 }.min(height * 0.3);
+    let button_width = (width - 2. * padding - (columns - 1) as f32 * gap) / columns as f32;
+    let button_height =
+        ((height - header_height - padding - (rows - 1) as f32 * gap) / rows as f32).min(32.);
+    let buttons = std::array::from_fn(|index| {
+        [
+            padding + (index % columns) as f32 * (button_width + gap),
+            header_height + (index / columns) as f32 * (button_height + gap),
+            button_width,
+            button_height,
+        ]
+    });
+    Some(ControlsLayout {
+        compact,
+        header_height,
+        buttons,
+    })
+}
+
+/// All coordinates use the same desktop units (physical pixels on Windows).
+pub fn hover_placement(
+    hud: [f64; 4],
+    requested_size: [f64; 2],
+    gap: f64,
+    screens: &[Screen],
+) -> Option<HoverPlacement> {
+    if !hud
+        .iter()
+        .chain(requested_size.iter())
+        .all(|v| v.is_finite())
+        || !gap.is_finite()
+        || gap < 0.
+        || hud[2] <= 0.
+        || hud[3] <= 0.
+        || requested_size.iter().any(|v| *v <= 0.)
+    {
+        return None;
+    }
+    let center = [hud[0] + hud[2] / 2., hud[1] + hud[3] / 2.];
+    let overlap = |s: &Screen| {
+        ((hud[0] + hud[2]).min(s.origin[0] + s.size[0]) - hud[0].max(s.origin[0])).max(0.)
+            * ((hud[1] + hud[3]).min(s.origin[1] + s.size[1]) - hud[1].max(s.origin[1])).max(0.)
+    };
+    let distance = |s: &Screen| {
+        (center[0] - center[0].clamp(s.origin[0], s.origin[0] + s.size[0])).powi(2)
+            + (center[1] - center[1].clamp(s.origin[1], s.origin[1] + s.size[1])).powi(2)
+    };
+    let screen = screens
+        .iter()
+        .filter(|s| {
+            s.origin.iter().chain(s.size.iter()).all(|v| v.is_finite())
+                && s.size.iter().all(|v| *v > gap * 2.)
+        })
+        .max_by(|a, b| {
+            overlap(a)
+                .total_cmp(&overlap(b))
+                .then_with(|| distance(b).total_cmp(&distance(a)))
+        })?;
+    let size = [
+        requested_size[0].min(screen.size[0] - gap * 2.),
+        requested_size[1].min(screen.size[1] - gap * 2.),
+    ];
+    let left = hud[0] - screen.origin[0];
+    let right = screen.origin[0] + screen.size[0] - hud[0] - hud[2];
+    let top = hud[1] - screen.origin[1];
+    let bottom = screen.origin[1] + screen.size[1] - hud[1] - hud[3];
+    let x = if left < right {
+        hud[0] + hud[2] + gap
+    } else {
+        hud[0] - size[0] - gap
+    };
+    let y = if top < bottom {
+        hud[1] + hud[3] + gap
+    } else {
+        hud[1] - size[1] - gap
+    };
+    let near_horizontal = left.min(right) < size[0] + gap * 2.;
+    let near_vertical = top.min(bottom) < size[1] + gap * 2.;
+    let preferred = if near_horizontal && near_vertical {
+        [x, y]
+    } else if left.min(right) < top.min(bottom) {
+        [x, center[1] - size[1] / 2.]
+    } else {
+        [center[0] - size[0] / 2., y]
+    };
+    let clamp = |point: [f64; 2]| {
+        [
+            point[0].clamp(
+                screen.origin[0] + gap,
+                screen.origin[0] + screen.size[0] - gap - size[0],
+            ),
+            point[1].clamp(
+                screen.origin[1] + gap,
+                screen.origin[1] + screen.size[1] - gap - size[1],
+            ),
+        ]
+    };
+    let covers_hud = |point: [f64; 2]| {
+        point[0] < hud[0] + hud[2]
+            && point[0] + size[0] > hud[0]
+            && point[1] < hud[1] + hud[3]
+            && point[1] + size[1] > hud[1]
+    };
+    let position = [
+        preferred,
+        [center[0] - size[0] / 2., y],
+        [x, center[1] - size[1] / 2.],
+        [center[0] - size[0] / 2., hud[1] - size[1] - gap],
+        [center[0] - size[0] / 2., hud[1] + hud[3] + gap],
+        [hud[0] - size[0] - gap, center[1] - size[1] / 2.],
+        [hud[0] + hud[2] + gap, center[1] - size[1] / 2.],
+    ]
+    .into_iter()
+    .map(clamp)
+    .find(|point| !covers_hud(*point))
+    .unwrap_or_else(|| clamp(preferred));
+    Some(HoverPlacement { position, size })
+}
+
+pub fn restore_position(saved: &Value, screens: &[Screen], size: [f64; 2]) -> Option<[f64; 2]> {
+    let screen = screens
+        .iter()
+        .find(|s| s.id == text(saved, "monitor"))
+        .or_else(|| screens.iter().find(|s| s.name == text(saved, "monitor")))
+        .or_else(|| screens.iter().find(|s| s.primary))
+        .or_else(|| screens.first())?;
+    let x = number(saved, "x")? * screen.scale;
+    let y = number(saved, "y")? * screen.scale;
+    Some([
+        screen.origin[0] + x.clamp(0., (screen.size[0] - size[0] * screen.scale).max(0.)),
+        screen.origin[1] + y.clamp(0., (screen.size[1] - size[1] * screen.scale).max(0.)),
+    ])
+}
+
+pub fn remember_position(point: [f64; 2], size: [f64; 2], screens: &[Screen]) -> Option<Value> {
+    let overlap = |s: &Screen| {
+        ((point[0] + size[0]).min(s.origin[0] + s.size[0]) - point[0].max(s.origin[0])).max(0.)
+            * ((point[1] + size[1]).min(s.origin[1] + s.size[1]) - point[1].max(s.origin[1]))
+                .max(0.)
+    };
+    let screen = screens
+        .iter()
+        .max_by(|a, b| overlap(a).total_cmp(&overlap(b)))?;
+    let round = |n: f64| (n * 2.).round() / 2.;
+    Some(serde_json::json!({
+        "x": round((point[0] - screen.origin[0]) / screen.scale),
+        "y": round((point[1] - screen.origin[1]) / screen.scale),
+        "monitor": screen.id,
+    }))
+}
+
+pub fn number(v: &Value, key: &str) -> Option<f64> {
+    v[key].as_f64().filter(|n| n.is_finite())
+}
+pub fn text<'a>(v: &'a Value, key: &str) -> &'a str {
+    v[key].as_str().unwrap_or("")
+}
+pub fn flag(v: &Value, key: &str) -> bool {
+    v[key].as_bool().unwrap_or(false)
+}
+pub fn array<'a>(v: &'a Value, key: &str) -> &'a [Value] {
+    v[key].as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+pub fn bytes(n: f64) -> String {
+    if n >= 1_073_741_824.0 {
+        format!("{:.1} GB", n / 1_073_741_824.0)
+    } else if n >= 1_048_576.0 {
+        format!("{:.1} MB", n / 1_048_576.0)
+    } else {
+        format!("{:.0} KB", n / 1024.0)
+    }
+}
+pub fn percent(n: Option<f64>) -> String {
+    n.map(|x| format!("{x:.0}%")).unwrap_or_else(|| "—".into())
+}
+pub fn ratio(used: Option<f64>, total: Option<f64>) -> Option<f64> {
+    used.zip(total)
+        .filter(|(_, t)| *t > 0.0)
+        .map(|(u, t)| (u / t * 100.0).clamp(0.0, 100.0))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mode {
+    Normal,
+    Pressure,
+    Critical,
+}
+impl Mode {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Pressure => "pressure",
+            Self::Critical => "critical",
+        }
+    }
+    pub fn interval(self, requested: u64, hidden: bool) -> u64 {
+        let n = match self {
+            Self::Normal => requested.max(250),
+            Self::Pressure => 4000,
+            Self::Critical => 8000,
+        };
+        if hidden {
+            n.max(8000)
+        } else {
+            n
+        }
+    }
+}
+pub fn resource_mode(system: &Value, settings: &Value, now: f64) -> Mode {
+    if !flag(&settings["resources"], "adaptive") {
+        return Mode::Normal;
+    }
+    let cpu = number(system, "cpu").unwrap_or(0.0);
+    let ram = ratio(
+        number(&system["memory"], "used"),
+        number(&system["memory"], "total"),
+    )
+    .unwrap_or(0.0);
+    let hot = component_heat(system, settings) || gpu_heat(system, settings, now);
+    if hot || ram >= 97.0 {
+        Mode::Critical
+    } else if cpu >= number(&settings["performance"], "cpuPercent").unwrap_or(90.0)
+        || ram >= number(&settings["performance"], "memoryPercent").unwrap_or(90.0)
+    {
+        Mode::Pressure
+    } else {
+        Mode::Normal
+    }
+}
+pub fn temperature_limit(settings: &Value) -> f64 {
+    number(&settings["performance"], "temperatureCelsius").unwrap_or(85.0)
+}
+pub fn component_heat(system: &Value, settings: &Value) -> bool {
+    array(system, "temperatures")
+        .iter()
+        .filter_map(|v| number(v, "celsius"))
+        .any(|t| t >= temperature_limit(settings))
+}
+pub fn gpu_heat(system: &Value, settings: &Value, now: f64) -> bool {
+    array(system, "gpus").iter().any(|g| {
+        text(g, "status") == "live"
+            && number(g, "sampledAt").is_some_and(|t| (0.0..=12.).contains(&(now - t)))
+            && number(g, "temperatureCelsius").is_some_and(|t| t >= temperature_limit(settings))
+    })
+}
+pub fn stress_percent(value: f64, remaining: bool) -> f64 {
+    let stress = if remaining { 100.0 - value } else { value };
+    stress.clamp(0.0, 100.0)
+}
+
+#[derive(Clone, Default)]
+pub struct Drain {
+    samples: HashMap<String, VecDeque<(f64, f64, Option<f64>)>>,
+}
+#[derive(Default, Debug)]
+pub struct Rate {
+    pub per_hour: Option<f64>,
+    pub eta_minutes: Option<f64>,
+    pub fast: bool,
+}
+impl Drain {
+    pub fn observe(&mut self, usage: &Value, now: f64) {
+        if text(usage, "state") != "connected" {
+            return;
+        }
+        let Some(at) = number(usage, "fetchedAt").filter(|at| (0.0..=600.0).contains(&(now - at)))
+        else {
+            return;
+        };
+        for w in array(usage, "windows") {
+            let Some(used) = number(w, "usedPercent").filter(|v| (0.0..=100.0).contains(v)) else {
+                continue;
+            };
+            let reset = number(w, "resetsAt");
+            if reset.is_some_and(|r| r <= now) {
+                continue;
+            }
+            let key = format!("{}/{}", text(usage, "surface"), text(w, "label"));
+            let list = self.samples.entry(key).or_default();
+            if list.back().is_some_and(|(last, value, last_reset)| {
+                at < *last || used < *value || reset != *last_reset
+            }) {
+                list.clear();
+            }
+            if list.back().is_some_and(|(last, _, _)| *last == at) {
+                continue;
+            }
+            list.push_back((at, used, reset));
+            while list.len() > 361 || (list.len() > 2 && list[1].0 < at - 1800.0) {
+                list.pop_front();
+            }
+        }
+    }
+    pub fn rate(&self, usage: &Value, w: &Value, now: f64) -> Rate {
+        if text(usage, "state") != "connected"
+            || !number(usage, "fetchedAt").is_some_and(|t| (0.0..=600.0).contains(&(now - t)))
+        {
+            return Rate::default();
+        }
+        let key = format!("{}/{}", text(usage, "surface"), text(w, "label"));
+        let Some(list) = self.samples.get(&key) else {
+            return Rate::default();
+        };
+        let Some((first, a, _)) = list.front() else {
+            return Rate::default();
+        };
+        let Some((last, b, reset)) = list.back() else {
+            return Rate::default();
+        };
+        if last - first < 120.0 || reset.is_some_and(|r| r <= now) {
+            return Rate::default();
+        }
+        let rate = (b - a).max(0.0) / (last - first) * 3600.0;
+        let eta = (rate > 0.0).then(|| (100.0 - b) / rate * 60.0);
+        Rate {
+            per_hour: Some(rate),
+            eta_minutes: eta,
+            fast: eta.zip(*reset).is_some_and(|(m, r)| m * 60.0 < r - now),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    fn hover_screen(origin: [f64; 2], size: [f64; 2], scale: f64) -> Screen {
+        Screen {
+            id: "display:hover".into(),
+            name: "Hover monitor".into(),
+            origin,
+            size,
+            scale,
+            primary: true,
+        }
+    }
+    #[test]
+    fn hover_opens_inward_at_each_edge_and_corner() {
+        let screen = hover_screen([0., 0.], [1920., 1080.], 1.);
+        for (x, y) in [
+            (820., 0.),
+            (820., 1024.),
+            (0., 512.),
+            (1640., 512.),
+            (0., 0.),
+            (1640., 0.),
+            (0., 1024.),
+            (1640., 1024.),
+        ] {
+            let p = hover_placement(
+                [x, y, 280., 56.],
+                [248., 110.],
+                8.,
+                std::slice::from_ref(&screen),
+            )
+            .unwrap();
+            assert!(p.position[0] >= 8. && p.position[0] + p.size[0] <= 1912.);
+            assert!(p.position[1] >= 8. && p.position[1] + p.size[1] <= 1072.);
+            if x == 0. {
+                assert!(p.position[0] >= x + 280. + 8.);
+            }
+            if x == 1640. {
+                assert!(p.position[0] + p.size[0] <= x - 8.);
+            }
+            if y == 0. {
+                assert!(p.position[1] >= y + 56. + 8.);
+            }
+            if y == 1024. {
+                assert!(p.position[1] + p.size[1] <= y - 8.);
+            }
+        }
+    }
+    #[test]
+    fn hover_stays_on_huds_monitor_across_dpi_and_negative_origins() {
+        let screens = [
+            hover_screen([0., 0.], [1920., 1080.], 1.),
+            hover_screen([-3840., -200.], [3840., 2160.], 2.),
+        ];
+        for width in [160., 280.] {
+            let hud = [-width * 2., 1960. - 112., width * 2., 112.];
+            let p = hover_placement(hud, [496., 220.], 16., &screens).unwrap();
+            assert!(p.position[0] + p.size[0] <= hud[0] - 16.);
+            assert!(p.position[1] + p.size[1] <= hud[1] - 16.);
+            assert!(p.position[0] >= -3824. && p.position[1] >= -184.);
+        }
+        // A pill straddling two displays follows the monitor with greater overlap.
+        let p = hover_placement([-240., 500., 280., 56.], [248., 110.], 8., &screens).unwrap();
+        assert!(p.position[0] + p.size[0] <= -8.);
+    }
+    #[test]
+    fn hover_bounds_hold_after_movement_and_on_small_displays() {
+        let screen = hover_screen([100., -100.], [800., 600.], 1.);
+        for width in [160., 280.] {
+            for x in (100..=900).step_by(40) {
+                for y in (-100..=500).step_by(40) {
+                    let p = hover_placement(
+                        [x as f64, y as f64, width, 56.],
+                        [248., 110.],
+                        8.,
+                        std::slice::from_ref(&screen),
+                    )
+                    .unwrap();
+                    assert!(p.position[0] >= 108. && p.position[0] + p.size[0] <= 892.);
+                    assert!(p.position[1] >= -92. && p.position[1] + p.size[1] <= 492.);
+                }
+            }
+        }
+        let tiny = hover_screen([0., 0.], [200., 100.], 1.);
+        let p = hover_placement([0., 0., 160., 56.], [248., 110.], 8., &[tiny]).unwrap();
+        assert_eq!(p.size, [184., 84.]);
+        assert_eq!(p.position, [8., 8.]);
+        assert!(hover_placement([0., 0., 160., 56.], [248., 110.], 8., &[]).is_none());
+        assert!(hover_placement([f64::NAN, 0., 160., 56.], [248., 110.], 8., &[screen]).is_none());
+    }
+    #[test]
+    fn controls_keep_all_actions_inside_small_and_scaled_viewports() {
+        for size in [[240., 270.], [184., 84.], [284., 184.], [120., 64.]] {
+            let layout = controls_layout(size).unwrap();
+            for (index, &[x, y, width, height]) in layout.buttons.iter().enumerate() {
+                assert!(x >= 0. && y >= layout.header_height && width > 0. && height > 0.);
+                assert!(x + width <= size[0] && y + height <= size[1]);
+                for &[other_x, other_y, other_width, other_height] in &layout.buttons[..index] {
+                    assert!(
+                        x + width <= other_x
+                            || other_x + other_width <= x
+                            || y + height <= other_y
+                            || other_y + other_height <= y
+                    );
+                }
+            }
+        }
+        assert!(!controls_layout([240., 270.]).unwrap().compact);
+        assert!(controls_layout([184., 84.]).unwrap().compact);
+        assert!(controls_layout([f32::NAN, 84.]).is_none());
+        assert!(controls_layout([240., 0.]).is_none());
+    }
+    #[test]
+    fn placement_tracks_negative_monitor_origins_and_dpi() {
+        let screens = vec![
+            Screen {
+                id: "display:1".into(),
+                name: "Main".into(),
+                origin: [0., 0.],
+                size: [1920., 1080.],
+                scale: 1.,
+                primary: true,
+            },
+            Screen {
+                id: "display:2".into(),
+                name: "Left".into(),
+                origin: [-3840., -200.],
+                size: [3840., 2160.],
+                scale: 2.,
+                primary: false,
+            },
+        ];
+        let saved = remember_position([-3440., 100.], [320., 112.], &screens).unwrap();
+        assert_eq!(saved, json!({"x":200.,"y":150.,"monitor":"display:2"}));
+        assert_eq!(
+            restore_position(&saved, &screens, [160., 56.]),
+            Some([-3440., 100.])
+        );
+        let changed = vec![Screen {
+            id: "display:2".into(),
+            name: "Left".into(),
+            origin: [-1920., 0.],
+            size: [1920., 1080.],
+            scale: 1.,
+            primary: true,
+        }];
+        assert_eq!(
+            restore_position(&saved, &changed, [160., 56.]),
+            Some([-1720., 150.])
+        );
+        let offscreen = json!({"x":9999.,"y":9999.,"monitor":"Unplugged"});
+        assert_eq!(
+            restore_position(&offscreen, &screens, [280., 56.]),
+            Some([1640., 1024.])
+        );
+        let mut duplicates = screens.clone();
+        duplicates[1].name = "Main".into();
+        let saved = remember_position([-3440., 100.], [320., 112.], &duplicates).unwrap();
+        assert_eq!(
+            restore_position(&saved, &duplicates, [160., 56.]),
+            Some([-3440., 100.])
+        );
+        let legacy = json!({"x":10.,"y":20.,"monitor":"Main"});
+        assert_eq!(
+            restore_position(&legacy, &screens, [160., 56.]),
+            Some([10., 20.])
+        );
+    }
+    fn usage(at: f64, used: f64, reset: f64) -> Value {
+        json!({"surface":"codex","state":"connected","fetchedAt":at,"windows":[{"label":"5 hours","minutes":300,"usedPercent":used,"resetsAt":reset}]})
+    }
+    #[test]
+    fn time_weighted_drain_resets_and_expires() {
+        let mut d = Drain::default();
+        d.observe(&usage(1000., 10., 19000.), 1000.);
+        let u = usage(1600., 20., 19000.);
+        d.observe(&u, 1600.);
+        d.observe(&u, 1600.);
+        let r = d.rate(&u, &u["windows"][0], 1600.);
+        assert_eq!(r.per_hour, Some(60.));
+        assert_eq!(r.eta_minutes, Some(80.));
+        assert!(r.fast);
+        assert!(d.rate(&u, &u["windows"][0], 2300.).per_hour.is_none());
+        let u = usage(1700., 1., 37000.);
+        d.observe(&u, 1700.);
+        assert!(d.rate(&u, &u["windows"][0], 1700.).per_hour.is_none());
+    }
+    #[test]
+    fn heat_and_memory_backoff_without_missing_data_fabrication() {
+        let s = json!({"resources":{"adaptive":true},"performance":{"temperatureCelsius":85}});
+        assert_eq!(resource_mode(&json!({}), &s, 1000.), Mode::Normal);
+        assert_eq!(
+            resource_mode(&json!({"temperatures":[{"celsius":90}]}), &s, 1000.),
+            Mode::Critical
+        );
+        assert_eq!(Mode::Critical.interval(250, false), 8000);
+        assert_eq!(Mode::Normal.interval(250, true), 8000);
+        assert_eq!(percent(ratio(Some(12.), Some(0.))), "—");
+        let disabled =
+            json!({"resources":{"adaptive":false},"performance":{"temperatureCelsius":85}});
+        let hot = json!({"cpu":5,"temperatures":[{"celsius":90}]});
+        assert!(component_heat(&hot, &disabled));
+        assert_eq!(resource_mode(&hot, &disabled, 1000.), Mode::Normal);
+        assert!(!component_heat(&json!({}), &s));
+    }
+    #[test]
+    fn remaining_allowance_and_used_resources_have_opposite_stress() {
+        assert_eq!(stress_percent(5., true), 95.);
+        assert_eq!(stress_percent(5., false), 5.);
+        assert_eq!(stress_percent(100., true), 0.);
+        assert_eq!(stress_percent(100., false), 100.);
+    }
+    #[test]
+    fn heat_on_secondary_gpu_requires_current_live_evidence() {
+        let s = json!({"resources":{"adaptive":true},"performance":{"temperatureCelsius":85}});
+        let mut system = json!({"gpus":[
+            {"status":"live","sampledAt":1000.,"temperatureCelsius":40.},
+            {"status":"live","sampledAt":1000.,"temperatureCelsius":90.}
+        ]});
+        assert!(gpu_heat(&system, &s, 1001.));
+        assert_eq!(resource_mode(&system, &s, 1001.), Mode::Critical);
+        assert!(!gpu_heat(&system, &s, 1013.));
+        assert_eq!(resource_mode(&system, &s, 1013.), Mode::Normal);
+        system["gpus"][1]["status"] = json!("unavailable");
+        assert!(!gpu_heat(&system, &s, 1001.));
+    }
+}

@@ -1,22 +1,68 @@
-# Neon HUD
+# Neon HUD · native Nook
 
-The **native Nook preview** is a compact Rust desktop HUD for Windows x64 and Apple Silicon Mac. A small black capsule peeks on hover and expands into media, calendar, notes, tasks, timer and file-reference widgets. CPU/GPU/RAM/network/drives/Codex/Claude readings, allowance drain indicators, tray access and the custom neon Settings remain available.
+A small, floating desktop utility for Windows and macOS: system performance, AI allowance and everyday tools in a native Rust capsule.
 
-[Native Nook guide and setup](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/README.md) · [Native source](https://github.com/ajaxcbcb/neon-hud/tree/codex/native-desktop/src-native) · [Alpha.6 release](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6) · [Features](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/docs/FEATURES.md) · [Changelog](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/CHANGELOG.md)
+## Latest release: 0.2.0-alpha.6
 
-![Native Nook preview with sample readings](https://raw.githubusercontent.com/ajaxcbcb/neon-hud/codex/native-desktop/docs/assets/native-nook.png)
+[Download alpha.6](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6) · [Feature guide](docs/FEATURES.md) · [Native setup and controls](src-native/README.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.2.0-alpha.6.md) · [Validation](docs/VALIDATION.md)
 
-Hosted Windows capture; measurements belong to the runner and unavailable sources stay labeled. Existing profiles retain Pill until **Preferences → Instruments → HUD layout → Nook** is selected; explicit choices persist. Nook peeks on hover, expands on click, pins open and collapses with Escape. Right-click or Shift+F10 opens Controls.
+Rust/egui/glow draws the floating HUD and custom neon frame directly. **Nook** opens from a capsule into a shallow panel of music, calendar, notes, timer, tasks and quick actions. Nook/Tray navigation and a numerical CPU/GPU/RAM/network/drives/Codex/Claude rail keep your tools and measurements together. Hover peeks, click opens, pin holds it open and Escape collapses it. Existing profiles keep their saved presentation; fresh profiles start in Nook. The [alpha.7 candidate](docs/releases/v0.2.0-alpha.7.md) adds **Preferences → Notch** for Mini (200 × 36) or Regular (240 × 40), hover, auto-close, pin and placement. The alternate floating pill remains available.
 
-**Windows target status:** Defender quarantined the installed alpha.6 executable. Target launch and Nook replacement remain blocked. The separate [self-signed development build](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed 49 native tests, timestamp/signature verification, certificate/key cleanup and physical Nook controls. It does not establish public publisher trust or Defender clearance and does not change public release assets or the updater feed. See [validation evidence](https://github.com/ajaxcbcb/neon-hud/blob/codex/native-desktop/docs/VALIDATION.md).
+![Native Nook with simultaneous utility widgets and numerical system readings](docs/assets/native-nook.png)
 
-The native preview is independent of NotchNook; exact reference animation timing is unmeasured. Apache 2.0/MIT and third-party notices are bundled.
+Actual Windows cloud capture. System readings belong to the runner; unavailable media, calendar and AI sources are shown explicitly. See the [reference study](reference-learning/notchnook/study.md) for observed NotchNook states and the limits of the animation comparison.
 
-## Legacy WebView edition
+Appearance, Connections and Preferences remain fixed setup steps. Theme cards, motion choices and a labeled sample of the selected layout retain the playful layout; settings have no scrolling or conventional OS title bar.
 
-The following installation and development instructions describe the earlier Tauri/Svelte edition maintained on `main`. Use the native guide above for the Nook preview.
+![Native custom neon settings frame captured on Windows](docs/assets/native-settings.png)
 
-A small desktop cockpit for CPU, GPU, memory, multiple drives, network traffic and AI allowance. Built with Rust, Tauri 2, Svelte and SVG instruments for Windows and macOS.
+Actual Windows CI capture. The appearance preview is labeled **SAMPLE DATA**. Build, interaction and installation evidence is recorded separately in validation.
+
+### Install
+
+| Platform | Package | Start |
+| --- | --- | --- |
+| Windows x64 | `neon-hud-native-windows-x64-unsigned-preview.zip` | Extract the complete ZIP into a permanent folder, then run `neon-hud-native.exe`. |
+| macOS Apple Silicon | Native arm64 DMG or app ZIP | Open the DMG and copy the app to Applications, or extract the complete app bundle. |
+
+Keep the bundled license and notice files with the app. These are preview packages without OS code signing or macOS notarization. Native Intel Mac packages are not supplied in this release; the older WebView release has a universal Mac package.
+
+The target Windows alpha.6 executable was subsequently quarantined by Microsoft Defender; target launch and Nook acceptance remain blocked. The separate [self-signed development build](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed 49 native tests, timestamp/signature verification, certificate/key cleanup and physical Nook controls. Its certificate is not publicly trusted and does not establish Defender clearance. It does not replace the published alpha.6 assets or update feed. See [development signing](docs/releases/MAINTENANCE.md#self-signed-windows-development-build) and [validation](docs/VALIDATION.md) for the exact source and receipts.
+
+The first configuration step is **Appearance**, followed by **Connections** and **Preferences**. Pick Neon Circuit, Cyberpunk Night or Aurora, and Quiet, Playful or Chaotic motion. In alpha.7, **Preferences → Notch** controls presentation, size and interaction; **Instruments** selects drives and metrics; **Startup & updates** controls login startup and updates. Startup is opt-in; replacing an installation should preserve its existing enabled/disabled choice.
+
+### Controls and must-keeps
+
+| Interaction | Result |
+| --- | --- |
+| Hover Nook / click Nook | Peek / open the shallow widget panel. |
+| Pin / Escape | Hold Nook open / collapse it. |
+| Nook / Tray | Widget overview / saved file references. |
+| Pill drag grip / double-click grip | Move / compress or restore the pill. |
+| Right-click or Shift+F10 | Native Settings, compression, pause/resume, hide, reset position and Quit controls. |
+| Tray or menu bar | Restore the HUD, configure it or quit; hiding keeps it available. |
+
+CPU/GPU/RAM, upload/download rates, multiple drives and Codex/Claude allowance retain numerical values, gradient stress meters and detailed views. Screen-aware popovers open inward at edges and corners. Attention badges describe sustained load, supported temperature readings, low free space or a Claude question. Motion respects reduced-motion preferences and quiets under resource pressure.
+
+Media playback, calendar, notes, tasks, deadline timers, battery, an opt-in camera mirror and quick actions live beside the metrics. Utilities store bounded local data separately from the profile. Availability depends on supported OS sources and permissions; details are in the [feature guide](docs/FEATURES.md).
+
+### Persistent connections and signed updates
+
+**Codex:** connect through the official Codex CLI/app-server. Saved connection intent and last-known allowance survive retry failures and restarts; stale readings retain their original time. Explicit disconnect clears them. Codex allowance describes Codex account usage; ordinary ChatGPT chat allowance has no supported local source.
+
+**Claude:** enable the reversible Claude Code statusline/hook bridge from Connections. Existing owned version paths can migrate without replacing unrelated Claude settings. Configured, waiting, connected and error states are distinct. Authentication remains with Claude Code; a configured bridge needs Claude Code to provide an actual reading.
+
+The alpha.7 candidate fixes an installed-profile guard that prevented Codex Connect/Disconnect. Connections shows each action's full result and distinguishes an enabled Claude bridge from an actual reading. Start or restart Claude Code after enabling its bridge. Isolated smoke tests disable both connectors and use temporary profiles.
+
+Five-hour and other windows appear only when reported by the provider. Allowance drain averages fresh consumption against elapsed time and estimates depletion at the current pace. Exact cumulative spent-token counts are unavailable from these quota sources; allowance percentages are not relabeled as token counts.
+
+Alpha.3 and later use **Check now → Download update → Restart and update**. Automatic checks and low-pressure downloads are configurable; native replacement requires the restart action. Signed metadata, archive hashes and signatures are verified before installation, with saved preferences, a normal exit and replacement acknowledgement. The [public alpha.4 → alpha.6 GUI update](https://github.com/ajaxcbcb/neon-hud/actions/runs/37663561512) passed, including tamper rejection and retained Pill/settings/startup. This native feed is separate from the older WebView feed.
+
+The renderer contains no WebView. Codex still uses its official helper, so connector-inclusive single-process operation and full-machine performance targets remain unproved. Windows and Mac build/package checks passed; Mac permission and hardware behavior require target runtime checks. See [validation](docs/VALIDATION.md) for the evidence boundary.
+
+## Legacy WebView release: 0.1.4
+
+The older release uses Rust, Tauri 2, Svelte and SVG instruments. Its setup executables, universal Mac DMG, Anime.js effects and automatic-install policy belong to that renderer. The following sections document that release; its stable updater manifest remains separate from the native preview.
 
 [Download the preview release](https://github.com/ajaxcbcb/neon-hud/releases) · [Feature introduction](docs/FEATURES.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.1.4.md)
 
@@ -80,6 +126,17 @@ From 0.1.3, enable **Automatically install updates and restart** to authorize fu
 Updates use the public [`updates/latest.json`](updates/latest.json) manifest and versioned GitHub Release assets. The first 0.1.0 installation must be upgraded with the installer. See [release maintenance](docs/releases/MAINTENANCE.md) for the signed publishing gate.
 
 ## Develop
+
+Native Rust application:
+
+```sh
+cargo test --manifest-path src-native/Cargo.toml --locked
+cargo run --manifest-path src-native/Cargo.toml --locked --release
+```
+
+Native Windows/macOS packaging and interaction gates run in [native.yml](.github/workflows/native.yml); public signed-upgrade acceptance runs in [native-update-proof.yml](.github/workflows/native-update-proof.yml). See [release maintenance](docs/releases/MAINTENANCE.md).
+
+Legacy WebView application:
 
 Install Node.js 24, Rust stable and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
 

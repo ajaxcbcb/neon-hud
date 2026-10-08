@@ -1,5 +1,75 @@
 # Changelog
 
+Current native preview: [0.2.0-alpha.6](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6). Legacy WebView release: 0.1.4. These use separate packages and update channels.
+
+## Unreleased
+
+- Alpha.7 candidate: repair Codex Connect/Disconnect and saved-intent restoration in installed native profiles; keep explicit smoke mode isolated from real Codex and Claude configuration.
+- Show full connector action feedback and Claude bridge-enabled/waiting status in Connections.
+- Prefer the installed OpenAI Codex executable on Windows, then PATH, retaining native vendor binaries as fallbacks without invoking shell shims.
+- Add Preferences → Notch: Mini/Regular capsule, hover peek, auto-close, pin, screen and reset; persist these independently of notes, tasks and timers.
+- Honor selected instruments and theme in Nook; distinguish Playful/Chaos, shorten hover response, preserve click targets during expansion and correct scaling on high-DPI displays.
+- Add persistence, interaction-policy, motion and scale regressions, plus isolated physical Windows settings checks. See the [candidate notes](docs/releases/v0.2.0-alpha.7.md) for acceptance status.
+
+- Separate Windows development-signing workflow: fresh locked native build, non-exportable ephemeral certificate, SHA-256 Authenticode/RFC3161 timestamp verification and labeled package with public certificate and receipt. Temporary trust is confined to the disposable hosted VM; exact certificate and persisted key removal gates packaging. Child tools have deadlines and UTC diagnostics, and injected exit/timeout cases check cleanup. The [accepted cloud run](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed 49 native tests, signing and physical Nook input. This is not publicly trusted publisher signing or Defender clearance; public update assets remain unchanged.
+- Document the target alpha.6 Defender quarantine and pending runtime/Nook acceptance. Explicit Nook selection is required when replacing a retained Pill profile.
+
+## [0.2.0-alpha.6] - 2026-10-07
+
+### Highlights
+
+- Native Nook capsule and utility widgets retain the core system/AI instruments.
+- Persistent connector intent, retained profiles and responsive right-click controls address restart and hover-transition issues.
+- Cryptographically signed Windows/Mac update packages and the public alpha.4-to-alpha.6 GUI upgrade passed. See [release notes](docs/releases/v0.2.0-alpha.6.md) and [validation](docs/VALIDATION.md) for runtime evidence and limits. OS code signing is separate.
+
+### Changes
+
+- Controls open on secondary press so a hover transition cannot cancel a release-based right-click. A physical held-button regression checks opening before release.
+- Existing and imported profiles retain their pill presentation on first Nook upgrade; fresh profiles start in Nook, and explicit choices survive restart. Existing utility data and settings are preserved.
+- Native black capsule with hover peek, click expansion, pinning, Escape dismissal and inward screen placement. The floating pill remains selectable and retains its saved position.
+- Shallow Home widgets show media, calendar, notes, timer, tasks and quick actions together, with Nook/Tray navigation, fine dividers and a numeric system/AI rail. Compact screens keep additional widgets accessible through focused icon views.
+- Native media controls and playback progress, battery status, opt-in camera mirror and local ICS calendars; macOS also offers EventKit Calendar and opt-in Music control. Permission failures and unavailable sources are shown explicitly.
+- Timer wheels, note B/I/U formatting, task favourites and pagination fit inside the native panel. ICS recurrence handles timezones and local-midnight all-day events across daylight-saving changes.
+- Camera previews stop when hidden or under pressure and release cached textures. Recoverable save errors leave the utility worker running; camera startup waits for an actual validated frame before reporting connected.
+- Instruments and AI tabs retain numerical system readings, gradient stress bars, history, five-hour reset windows and measured allowance drain. Local notes, tasks, deadline timers and file references use separate bounded, recoverable storage.
+- Saved Codex connection intent and last-known allowance survive retry failures. Stale readings show their original timestamp and connection state; explicit disconnect clears them.
+- Bridge migration recognises owned Windows version folders and macOS versioned app bundles while preserving foreign Claude configuration.
+- Added source regressions for timer/state migration, camera frame bounds, calendar recurrence, monitor scale/stacking, retry and bridge ownership, plus hosted physical Nook controls, saved note/task/timer checks and native frame captures. Windows/Mac acceptance, signed publication and the public alpha.4-to-alpha.6 GUI update passed, including retained Pill layout, settings, startup preference and replacement Controls. Target installation is checked separately. Exact reference motion timing is unmeasured.
+
+Alpha.5's public updater proof failed replacement Controls and legacy Pill retention. Alpha.6 repairs both paths.
+
+## [0.2.0-alpha.4] - 2026-10-07
+
+- The Download update action stays visible and disabled while an update operation runs. Hovering identifies the signed release version, and the status and activity indicator show progress.
+- Receives updates from the signed native-preview channel introduced in alpha.3, retaining the app icon, screen-aware right-click controls and saved native preferences.
+
+## [0.2.0-alpha.3] - 2026-10-07
+
+- Right-click any metric, the drag grip or pill background to open a separate native controls popup. The complete menu opens inward at screen edges, supports Settings, compression, pause/resume, hide, reset and Quit, and dismisses with Escape or a focus change. Shift+F10 also opens it.
+- Embedded the Neon N icon in the Windows executable and native windows; the tray now uses the same mark. macOS retains its bundled app icon.
+- Controls use two columns when a small monitor limits the popup height, keeping every action reachable without scrolling.
+- Added real Windows mouse-input checks at all eight edges/corners, all six menu actions and Escape dismissal, plus executable/window icon checks.
+- Fixed Windows pointer re-entry at identical client coordinates, so moving the pill between screen edges does not leave right-click input without a pointer position.
+- Hidden Windows HUDs receive coalesced background callbacks, preserving tray actions, profile saves and updater completion at the existing slower sampling rate.
+- Added a separate signed native update channel with bounded downloads, archive size/hash verification, normal-exit installation, retained application backup and startup acknowledgement. Settings includes automatic checks/downloads, Check now, progress and Restart and update; failed automatic downloads wait for a new check. The stable webview updater feed is unchanged.
+
+## [0.2.0-alpha.2] - 2026-10-07
+
+- Native hover readings open inward at all four screen edges and corners and stay within the HUD monitor. Placement follows dragging and compression, including negative monitor origins and different display scales.
+- Placement uses cached display bounds and does not resize the pill or rewrite saved preferences.
+- Added geometric edge/monitor tests and a Windows CI check that moves the native pill and hovers with the real cursor at eight positions.
+
+## [0.2.0-alpha.1] - 2026-10-07
+
+- Rust/egui/glow renderer with a 160 × 56 compressed pill and 280 × 56 regular pill, native tray controls and separate instrument windows.
+- Custom neon settings frame with Appearance, Connections and Preferences steps, theme cards and a sample pill preview. Instruments and Startup choices fit inside Preferences; multiple drives use pages. No scroll areas.
+- Custom neon metric icons, gradient gauges/bars, brief question reactions and motion that quiets under pressure.
+- Separate preview preferences, monitor-relative placement by display identity, debounced saves and opt-in preview startup.
+- Shared Claude bridge readings remain available while preview preferences stay separate. Codex and Claude connectors still use helpers; strict single-process operation and signed native automatic updates remain unfinished.
+- Windows/macOS tests and locked builds passed. All three setup steps, both Preferences pages, instruments and the 160 × 56 pill were rendered and inspected on Windows CI. An unsigned Windows x64 ZIP and Apple Silicon Mac app/DMG are available as a separate prerelease.
+- Embedded Ubuntu Bold headings, vector checkmarks/arrows and a fixed footer retain the reference layout without unsupported glyphs or taskbar overlap in the inspected render. Font license and copyright notices are bundled.
+- This preview has not replaced the installed v0.1.4 or the automatic-update manifest. Native installation, Mac runtime and hardware performance checks remain open.
+
 ## [0.1.4] - 2026-10-07
 
 ### Added

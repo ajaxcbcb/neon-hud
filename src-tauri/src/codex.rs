@@ -2,13 +2,12 @@ use super::{now, Usage, UsageWindow};
 use serde_json::{json, Value};
 use std::{
     io::{self, BufRead, BufReader, Write},
+    path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc::{self, Receiver},
     thread,
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager};
-use tauri_plugin_opener::OpenerExt;
 
 pub struct CodexState {
     child: Option<Child>,
@@ -16,8 +15,41 @@ pub struct CodexState {
     lines: Option<Receiver<Value>>,
     last: Option<Instant>,
     usage: Usage,
+    last_known: Option<Usage>,
     sequence: u64,
+    enabled: bool,
+    retry_after: Option<Instant>,
+    retry_delay: Duration,
 }
+
+fn executable_candidates(
+    local_app_data: Option<&Path>,
+    path: impl IntoIterator<Item = PathBuf>,
+    windows: bool,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if windows {
+        if let Some(root) = local_app_data {
+            candidates.push(root.join("Programs/OpenAI/Codex/bin/codex.exe"));
+        }
+    }
+    candidates.extend(
+        path.into_iter()
+            .map(|directory| directory.join(if windows { "codex.exe" } else { "codex" })),
+    );
+    if windows {
+        if let Some(root) = local_app_data {
+            let base = root.join("hermes/node/node_modules");
+            candidates.push(base.join("@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
+            candidates.push(
+                base.join("@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"),
+            );
+            candidates.push(base.join("@openai/codex/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
+        }
+    }
+    candidates
+}
+
 impl Default for CodexState {
     fn default() -> Self {
         Self {
@@ -30,11 +62,73 @@ impl Default for CodexState {
                 "Codex app-server",
                 "Connect the local Codex CLI to read allowance.",
             ),
+            last_known: None,
             sequence: 0,
+            enabled: false,
+            retry_after: None,
+            retry_delay: Duration::from_secs(5),
         }
     }
 }
 impl CodexState {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn restore_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        self.retry_after = if enabled { Some(Instant::now()) } else { None };
+        if enabled {
+            self.usage = Usage::unavailable("codex", "Codex app-server", "Connection pending.");
+        }
+    }
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if enabled {
+            self.retry_after = None;
+        } else {
+            self.retry_after = None;
+            self.disconnect();
+            self.last_known = None;
+        }
+    }
+    fn retry_later(&mut self, error: &str) {
+        self.usage = if let Some(previous) = &self.last_known {
+            Usage {
+                state: "error".into(),
+                message: format!("Last-known allowance; connection retry pending: {error}"),
+                ..previous.clone()
+            }
+        } else {
+            Usage {
+                surface: "codex".into(),
+                source: "Codex app-server".into(),
+                state: "unknown".into(),
+                message: error.into(),
+                fetched_at: None,
+                windows: vec![],
+            }
+        };
+        self.retry_after = Some(Instant::now() + self.retry_delay);
+        self.retry_delay = (self.retry_delay * 2).min(Duration::from_secs(300));
+    }
+    fn refresh_failed(&mut self, error: &str) {
+        self.disconnect();
+        if self.enabled {
+            self.retry_later(error);
+        }
+    }
+    pub fn connect_enabled<F>(&mut self, login: bool, open_url: F) -> Result<String, String>
+    where
+        F: FnOnce(&str) -> Result<(), String>,
+    {
+        self.set_enabled(true);
+        let result = self.connect(login, open_url);
+        if let Err(error) = &result {
+            self.disconnect();
+            self.retry_later(error);
+        }
+        result
+    }
     pub fn disconnect(&mut self) {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
@@ -45,22 +139,16 @@ impl CodexState {
         self.last = None;
         self.usage = Usage::unavailable("codex", "Codex app-server", "Disconnected.");
     }
-    fn executable() -> Option<std::path::PathBuf> {
-        let mut candidates = Vec::new();
-        if let Ok(root) = std::env::var("LOCALAPPDATA") {
-            let base = std::path::Path::new(&root).join("hermes/node/node_modules");
-            candidates.push(base.join("@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
-            candidates.push(
-                base.join("@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"),
-            );
-            candidates.push(base.join("@openai/codex/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
-        }
-        if let Ok(path) = std::env::var("PATH") {
-            for part in std::env::split_paths(&path) {
-                candidates.push(part.join(if cfg!(windows) { "codex.exe" } else { "codex" }));
-            }
-        }
-        candidates.into_iter().find(|p| p.is_file())
+    fn executable() -> Option<PathBuf> {
+        let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        executable_candidates(
+            local_app_data.as_deref(),
+            std::env::split_paths(&path),
+            cfg!(windows),
+        )
+        .into_iter()
+        .find(|candidate| candidate.is_file())
     }
     fn start(&mut self) -> Result<(), String> {
         let exe = Self::executable().ok_or("Codex native CLI executable was not found")?;
@@ -132,7 +220,10 @@ impl CodexState {
         self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))?;
         self.response(id, Duration::from_secs(8))
     }
-    pub fn connect(&mut self, app: &AppHandle, login: bool) -> Result<String, String> {
+    pub fn connect<F>(&mut self, login: bool, open_url: F) -> Result<String, String>
+    where
+        F: FnOnce(&str) -> Result<(), String>,
+    {
         self.disconnect();
         if let Err(e) = self.start() {
             self.disconnect();
@@ -140,10 +231,12 @@ impl CodexState {
         }
         match self.request("account/read", json!({"refreshToken":false})) {
             Ok(account) if !account.get("account").unwrap_or(&Value::Null).is_null() => {
-                self.refresh();
+                self.refresh()?;
+                self.retry_delay = Duration::from_secs(5);
+                self.retry_after = None;
                 Ok("Connected to the local Codex account.".into())
             }
-            _ if login => {
+            Ok(_) if login => {
                 let login = self.request(
                     "account/login/start",
                     json!({"type":"chatgpt","useHostedLoginSuccessPage":true,"appBrand":"chatgpt"}),
@@ -155,9 +248,7 @@ impl CodexState {
                 if !url.starts_with("https://") {
                     return Err("Codex returned an unsafe authorization URL".into());
                 }
-                app.opener()
-                    .open_url(url, None::<&str>)
-                    .map_err(|e| e.to_string())?;
+                open_url(url)?;
                 self.usage = Usage {
                     surface: "codex".into(),
                     source: "Codex app-server".into(),
@@ -169,7 +260,7 @@ impl CodexState {
                 self.last = Some(Instant::now());
                 Ok("Finish Codex sign-in in your browser.".into())
             }
-            _ => {
+            Ok(_) => {
                 self.usage = Usage {
                     surface: "codex".into(),
                     source: "Codex app-server".into(),
@@ -181,9 +272,13 @@ impl CodexState {
                 self.last = Some(Instant::now());
                 Ok("Codex sign-in is required.".into())
             }
+            Err(error) => {
+                self.disconnect();
+                Err(error)
+            }
         }
     }
-    fn refresh(&mut self) {
+    fn refresh(&mut self) -> Result<(), String> {
         self.last = Some(Instant::now());
         match self.request("account/rateLimits/read", json!({})) {
             Ok(value) => {
@@ -204,20 +299,38 @@ impl CodexState {
                         windows,
                     }
                 };
+                if self.usage.state == "connected" {
+                    self.last_known = Some(self.usage.clone());
+                }
+                Ok(())
             }
-            Err(e) => {
-                self.usage = Usage {
-                    surface: "codex".into(),
-                    source: "Codex app-server".into(),
-                    state: "error".into(),
-                    message: e,
-                    fetched_at: None,
-                    windows: vec![],
-                };
-            }
+            Err(e) => Err(e),
         }
     }
     pub fn usage(&mut self) -> Usage {
+        if self.enabled {
+            if self
+                .child
+                .as_mut()
+                .is_some_and(|child| child.try_wait().ok().flatten().is_some())
+            {
+                self.disconnect();
+                self.retry_later("Codex helper exited; retry pending.");
+            }
+            if self.child.is_none()
+                && self
+                    .retry_after
+                    .is_none_or(|deadline| Instant::now() >= deadline)
+            {
+                match self.connect(false, |_| Err("Automatic login is disabled".into())) {
+                    Ok(_) => {}
+                    Err(error) => {
+                        self.disconnect();
+                        self.retry_later(&error);
+                    }
+                }
+            }
+        }
         if self.child.is_some()
             && self
                 .last
@@ -225,16 +338,27 @@ impl CodexState {
         {
             if self.usage.state == "needs-login" {
                 self.last = Some(Instant::now());
-                if self
-                    .request("account/read", json!({"refreshToken":false}))
-                    .ok()
-                    .and_then(|v| v.get("account").cloned())
-                    .is_some_and(|v| !v.is_null())
-                {
-                    self.refresh();
+                match self.request("account/read", json!({"refreshToken":false})) {
+                    Ok(value)
+                        if value
+                            .get("account")
+                            .is_some_and(|account| !account.is_null()) =>
+                    {
+                        if let Err(error) = self.refresh() {
+                            self.refresh_failed(&error);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) if self.enabled => {
+                        self.disconnect();
+                        self.retry_later(&error);
+                    }
+                    Err(_) => {}
                 }
             } else {
-                self.refresh();
+                if let Err(error) = self.refresh() {
+                    self.refresh_failed(&error);
+                }
             }
         }
         self.usage.clone()
@@ -302,6 +426,42 @@ fn parse_limits(result: &Value) -> Vec<UsageWindow> {
 mod tests {
     use super::*;
     #[test]
+    fn windows_prefers_desktop_cli_then_path_before_vendor_fallbacks() {
+        let root = Path::new("local-app-data");
+        let path = [PathBuf::from("first-path"), PathBuf::from("second-path")];
+        let candidates = executable_candidates(Some(root), path.clone(), true);
+        assert_eq!(candidates.len(), 6);
+        assert_eq!(
+            candidates[0],
+            root.join("Programs/OpenAI/Codex/bin/codex.exe")
+        );
+        assert_eq!(candidates[1], path[0].join("codex.exe"));
+        assert_eq!(candidates[2], path[1].join("codex.exe"));
+        let available = [candidates[2].clone(), candidates[3].clone()];
+        assert_eq!(
+            candidates
+                .iter()
+                .find(|candidate| available.contains(candidate)),
+            Some(&candidates[2])
+        );
+        assert!(candidates.iter().all(|candidate| candidate
+            .extension()
+            .is_some_and(|extension| extension == "exe")));
+    }
+    #[test]
+    fn macos_uses_path_without_windows_candidates() {
+        let directory = PathBuf::from("cli-bin");
+        assert_eq!(
+            executable_candidates(
+                Some(Path::new("unused-local-data")),
+                [directory.clone()],
+                false
+            ),
+            vec![directory.join("codex")]
+        );
+        assert!(executable_candidates(None, Vec::<PathBuf>::new(), true).is_empty());
+    }
+    #[test]
     fn limit_parsing_ignores_missing_and_out_of_range() {
         assert!(parse_limits(&json!({})).is_empty());
         assert!(parse_limits(
@@ -320,5 +480,68 @@ mod tests {
             read_bounded_line(&mut reader).unwrap().unwrap(),
             b"{\"id\":1}\n"
         );
+    }
+    #[test]
+    fn restored_intent_retries_with_bounded_delay_and_disable_clears_it() {
+        let mut codex = CodexState::default();
+        codex.restore_enabled(true);
+        assert!(codex.enabled);
+        assert!(codex.retry_after.is_some());
+        for _ in 0..10 {
+            codex.retry_later("synthetic failure");
+        }
+        assert_eq!(codex.retry_delay, Duration::from_secs(300));
+        assert_eq!(codex.usage.state, "unknown");
+        codex.set_enabled(false);
+        assert!(!codex.enabled);
+        assert!(codex.retry_after.is_none());
+        assert_eq!(codex.usage.state, "unavailable");
+    }
+    #[test]
+    fn refresh_transport_failure_retries_only_while_enabled() {
+        let mut codex = CodexState::default();
+        codex.restore_enabled(true);
+        codex.refresh_failed("synthetic RPC timeout");
+        assert!(codex.child.is_none());
+        assert_eq!(codex.usage.state, "unknown");
+        assert!(codex.retry_after.is_some());
+        let retry_delay = codex.retry_delay;
+        codex.set_enabled(false);
+        codex.refresh_failed("synthetic RPC timeout");
+        assert!(codex.retry_after.is_none());
+        assert_eq!(codex.retry_delay, retry_delay);
+        assert_eq!(codex.usage.state, "unavailable");
+    }
+    #[test]
+    fn retry_retains_original_last_known_sample_until_explicit_disconnect() {
+        let mut codex = CodexState::default();
+        codex.restore_enabled(true);
+        let sample = Usage {
+            surface: "codex".into(),
+            source: "Codex app-server".into(),
+            state: "connected".into(),
+            message: "Codex account allowance".into(),
+            fetched_at: Some(1234.0),
+            windows: vec![UsageWindow {
+                label: "5 hours".into(),
+                minutes: 300,
+                used_percent: 42.0,
+                resets_at: Some(2000.0),
+            }],
+        };
+        codex.usage = sample.clone();
+        codex.last_known = Some(sample);
+        codex.refresh_failed("synthetic timeout");
+        assert_eq!(codex.usage.state, "error");
+        assert!(codex.usage.message.contains("Last-known"));
+        assert_eq!(codex.usage.fetched_at, Some(1234.0));
+        assert_eq!(codex.usage.windows[0].used_percent, 42.0);
+        codex.retry_later("synthetic retry failure");
+        assert_eq!(codex.usage.fetched_at, Some(1234.0));
+        assert_eq!(codex.usage.windows.len(), 1);
+        codex.set_enabled(false);
+        assert!(codex.usage.windows.is_empty());
+        assert!(codex.last_known.is_none());
+        assert!(codex.retry_after.is_none());
     }
 }

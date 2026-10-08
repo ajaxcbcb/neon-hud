@@ -1,0 +1,338 @@
+name: Native desktop preview
+
+on:
+  push:
+    branches: [codex/native-desktop]
+    paths:
+      - '.github/workflows/native.yml'
+      - 'src-native/**'
+      - 'src-tauri/**'
+      - 'scripts/native-windows-smoke.ps1'
+      - 'scripts/package-native-macos.sh'
+      - 'scripts/native-release-manifest.py'
+      - 'LICENSE-APACHE'
+      - 'NOTICE'
+      - 'THIRD-PARTY-NOTICES.md'
+  pull_request:
+    paths:
+      - '.github/workflows/native.yml'
+      - 'src-native/**'
+      - 'src-tauri/**'
+      - 'scripts/native-windows-smoke.ps1'
+      - 'scripts/package-native-macos.sh'
+      - 'scripts/native-release-manifest.py'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a signed native preview after all checks pass
+        type: boolean
+        default: false
+      proof:
+        description: Test the published alpha.4 to alpha.6 signed GUI update only
+        type: boolean
+        default: false
+      development_signing:
+        description: Build a separate Windows self-signed development artifact (not publicly trusted)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.head_ref || github.ref_name }}-${{ inputs.development_signing && 'development-signing' || inputs.proof && 'proof' || inputs.publish && 'publish' || 'checks' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  installed-update:
+    if: github.event_name == 'workflow_dispatch' && inputs.proof && !inputs.development_signing
+    uses: ./.github/workflows/native-update-proof.yml
+    with:
+      from: v0.2.0-alpha.4
+      to: v0.2.0-alpha.6
+  native-preview:
+    if: github.event_name != 'workflow_dispatch' || (!inputs.proof && !inputs.development_signing)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: |
+            src-native -> target
+            src-tauri -> target
+      - name: Format native source
+        id: format
+        continue-on-error: true
+        run: cargo fmt --manifest-path src-native/Cargo.toml --check
+      - name: Verify committed dependency resolution
+        id: resolution
+        continue-on-error: true
+        shell: bash
+        run: cargo metadata --manifest-path src-native/Cargo.toml --format-version 1 --locked > "$RUNNER_TEMP/native-metadata.json"
+      - name: Resolve dependency repair
+        if: steps.resolution.outcome == 'failure'
+        shell: bash
+        run: cargo metadata --manifest-path src-native/Cargo.toml --format-version 1 > "$RUNNER_TEMP/native-metadata.json"
+      - name: Generate formatting repair patch
+        if: steps.format.outcome == 'failure' || steps.resolution.outcome == 'failure'
+        shell: bash
+        run: |
+          cargo fmt --manifest-path src-native/Cargo.toml
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          git diff --binary -- src-native src-tauri > "$RUNNER_TEMP/native-format.patch"
+      - name: Upload formatting repair patch
+        if: always() && (steps.format.outcome == 'failure' || steps.resolution.outcome == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-format-repair-${{ matrix.os }}
+          path: ${{ runner.temp }}/native-format.patch
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Test native source
+        run: cargo test --manifest-path src-native/Cargo.toml --locked
+      - name: Verify native dependency closure
+        shell: bash
+        run: |
+          tree="$(cargo tree --manifest-path src-native/Cargo.toml --locked --edges normal --prefix none)"
+          if grep -E '^(tauri|tauri-build|tauri-plugin-|wry |webview2-com |webkit2gtk )' <<< "$tree"; then
+            echo 'Native dependency closure includes a desktop webview crate' >&2
+            exit 1
+          fi
+      - name: Regression test desktop webview
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Regression test headless core
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-default-features
+      - name: Build native release
+        run: cargo build --manifest-path src-native/Cargo.toml --locked --release
+      - name: Provide software OpenGL for the Windows CI desktop
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa3d-23.3.5-release-msvc.7z'
+          $mesa = Join-Path $env:RUNNER_TEMP 'native-ci-mesa'
+          Invoke-WebRequest -Uri 'https://github.com/pal1000/mesa-dist-win/releases/download/23.3.5/mesa3d-23.3.5-release-msvc.7z' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'CE42BEE2034F3DBD272F1D658040DFA678C0D8E653F260BE8808F4E80F34C06A') { throw 'CI Mesa archive checksum mismatch' }
+          & 'C:\Program Files\7-Zip\7z.exe' x $archive "-o$mesa" 'x64/opengl32.dll' 'x64/libglapi.dll' 'x64/libgallium_wgl.dll'
+          if ($LASTEXITCODE -ne 0) { throw 'CI Mesa extraction failed' }
+          Copy-Item -LiteralPath (Join-Path $mesa 'x64/opengl32.dll'), (Join-Path $mesa 'x64/libglapi.dll'), (Join-Path $mesa 'x64/libgallium_wgl.dll') -Destination 'src-native/target/release'
+          'GALLIUM_DRIVER=llvmpipe' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Capture native Windows GUI and process receipt
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($page in 0..3) {
+            $output = if ($page -eq 0) { "$env:RUNNER_TEMP/native-smoke" } else { "$env:RUNNER_TEMP/native-smoke/page-$page" }
+            ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory $output -SettingsPage $page
+          }
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/hover" -HoverEdges
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/controls" -ContextMenu
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/controls-quit" -ContextMenu -QuitMenu
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-smoke/nook-interaction" -Nook -NookInteraction
+      - name: Package Windows portable preview
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'neon-hud-native-windows-x64-unsigned-preview'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          Copy-Item -LiteralPath 'src-native/target/release/neon-hud-native.exe', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'THIRD-PARTY-NOTICES.md' -Destination $package
+          Copy-Item -LiteralPath 'src-native/licenses' -Destination $package -Recurse
+          @'
+          Unsigned native desktop preview. Extract the ZIP and run neon-hud-native.exe.
+          Updates use the signed native-preview channel in Settings / Preferences / Startup & updates.
+          '@ | Set-Content -LiteralPath (Join-Path $package 'PREVIEW.txt')
+          Compress-Archive -LiteralPath $package -DestinationPath "$package.zip" -Force
+      - name: Upload Windows smoke evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-smoke-evidence
+          path: ${{ runner.temp }}/native-smoke/**
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Package macOS app and DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/package-native-macos.sh src-native/target/release/neon-hud-native "$RUNNER_TEMP/native-package"
+      - name: Upload Windows portable preview
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-x64-unsigned-preview
+          path: |
+            ${{ runner.temp }}/neon-hud-native-windows-x64-unsigned-preview.zip
+            src-native/target/release/neon-hud-native.exe
+            src-native/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload macOS app and DMG preview
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-macos-unsigned-preview
+          path: |
+            ${{ runner.temp }}/native-package/*.dmg
+            ${{ runner.temp }}/native-package/*.zip
+            src-native/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce committed source gate
+        if: always() && (steps.format.outcome == 'failure' || steps.resolution.outcome == 'failure')
+        shell: bash
+        run: |
+          echo 'Formatting or dependency lockfile needs repair; see the runner-specific repair patch artifact.' >&2
+          exit 1
+
+  development-signing:
+    if: github.event_name == 'workflow_dispatch' && inputs.development_signing
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject conflicting publication modes
+        shell: pwsh
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          PROOF: ${{ inputs.proof }}
+        run: |
+          if ($env:PUBLISH -eq 'true' -or $env:PROOF -eq 'true') {
+            throw 'Development signing must run separately from publication and update proof.'
+          }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-native -> target
+          cache-on-failure: true
+      - name: Verify and build the committed native source
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path src-native/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { throw 'Formatting failed.' }
+          cargo metadata --manifest-path src-native/Cargo.toml --format-version 1 --locked > "$env:RUNNER_TEMP/native-metadata.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependencies failed.' }
+          cargo test --manifest-path src-native/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed.' }
+          cargo clean --manifest-path src-native/Cargo.toml --release -p neon-hud-native
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh native build preparation failed.' }
+          cargo build --manifest-path src-native/Cargo.toml --locked --release
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
+          git diff --exit-code -- src-native src-tauri
+          if ($LASTEXITCODE -ne 0) { throw 'Build altered committed source.' }
+      - name: Sign and verify the development package
+        shell: pwsh
+        timeout-minutes: 12
+        run: |
+          ./scripts/sign-native-development.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-development-signing" -SourceCommit '${{ github.sha }}'
+      - name: Always remove journaled development trust and keys
+        if: always()
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          ./scripts/sign-native-development.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-development-signing" -SourceCommit '${{ github.sha }}' -CleanupOnly
+      - name: Upload signing stage diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-development-signing-diagnostics
+          path: ${{ runner.temp }}/native-development-signing/diagnostics/**
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Provide software OpenGL for isolated Nook acceptance
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa3d-23.3.5-release-msvc.7z'
+          $mesa = Join-Path $env:RUNNER_TEMP 'native-ci-mesa'
+          Invoke-WebRequest -Uri 'https://github.com/pal1000/mesa-dist-win/releases/download/23.3.5/mesa3d-23.3.5-release-msvc.7z' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'CE42BEE2034F3DBD272F1D658040DFA678C0D8E653F260BE8808F4E80F34C06A') { throw 'CI Mesa archive checksum mismatch' }
+          & 'C:\Program Files\7-Zip\7z.exe' x $archive "-o$mesa" 'x64/opengl32.dll' 'x64/libglapi.dll' 'x64/libgallium_wgl.dll'
+          if ($LASTEXITCODE -ne 0) { throw 'CI Mesa extraction failed' }
+          Copy-Item -LiteralPath (Join-Path $mesa 'x64/opengl32.dll'), (Join-Path $mesa 'x64/libglapi.dll'), (Join-Path $mesa 'x64/libgallium_wgl.dll') -Destination 'src-native/target/release'
+          'GALLIUM_DRIVER=llvmpipe' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Verify the signed Nook interactions
+        shell: pwsh
+        run: |
+          ./scripts/native-windows-smoke.ps1 -Executable 'src-native/target/release/neon-hud-native.exe' -OutputDirectory "$env:RUNNER_TEMP/native-signed-nook" -Nook -NookInteraction
+      - name: Upload self-signed development package
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-self-signed-development
+          path: |
+            ${{ runner.temp }}/native-development-signing/*.zip
+            ${{ runner.temp }}/native-development-signing/signing-receipt.json
+            ${{ runner.temp }}/native-development-signing/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload Nook acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-signed-nook-evidence
+          path: ${{ runner.temp }}/native-signed-nook/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  publish-native:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && !inputs.development_signing && github.ref == 'refs/heads/codex/native-desktop'
+    needs: native-preview
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*-unsigned-preview
+          path: native-packages
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Create signed channel metadata
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: python3 scripts/native-release-manifest.py native-packages native-release "$SOURCE_COMMIT"
+      - name: Sign native archives and manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        shell: bash
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          for file in native-release/*.zip native-release/native-update.json; do
+            npx --no-install tauri signer sign "$file" > /dev/null
+            test -s "$file.sig"
+          done
+      - name: Independently verify release signatures
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+          python3 scripts/native-release-manifest.py --verify-signatures native-release
+      - name: Publish immutable native preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="$(python3 -c 'import json;print(json.load(open("native-release/native-update.json"))["version"])')"
+          tag="v$version"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo 'Release already exists; do not overwrite signed releases.' >&2
+            exit 1
+          fi
+          notes="docs/releases/$tag.md"
+          test -f "$notes"
+          gh release create "$tag" native-release/* --draft --prerelease --target "$GITHUB_SHA" --title "Neon HUD Native $version" --notes-file "$notes"
+          gh release edit "$tag" --draft=false

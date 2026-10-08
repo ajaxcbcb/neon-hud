@@ -1,0 +1,41 @@
+{
+  "reference": {
+    "id": "notchnook-desktop",
+    "originalUrl": "https://toolfolio.com/tools/notch-nook",
+    "primaryUrl": "https://getnotchnook.com/",
+    "creator": "Lo.cafe",
+    "accessDate": "2026-10-07",
+    "sources": ["https://getnotchnook.com/whats-new", "https://getnotchnook.com/press"]
+  },
+  "status": "partial-observation",
+  "referenceScope": "Whole desktop surface, documented feature behavior, transitions and animations; adapt OS-specific utilities to Windows and macOS.",
+  "claims": [
+    {"id": "D1", "label": "OBSERVED", "evidence": "Official site text", "claim": "Top-screen utility supports screens without a physical notch."},
+    {"id": "D2", "label": "OBSERVED", "evidence": "Official site and release-note text", "claim": "Music, notes, tasks, timers, calendar, mirror, shortcuts, persistent tray and device activities are documented."},
+    {"id": "V1", "label": "UNKNOWN", "claim": "No reference pixels or complete clip playback observed yet; dimensions and motion parameters remain unmeasured."},
+    {"id": "U1", "label": "OBSERVED", "evidence": "Human request in this chat", "claim": "Core system, AI, profile, tray, startup, update and movable/compressible-pill features must remain available."}
+  ],
+  "designLanguage": [
+    {"invariant": "Compact closed surface with an expanding native utility panel", "evidence": ["D1"], "implementation": "nook state machine plus native viewport", "acceptance": "Reference/native collapsed, hover and expanded frame/playback comparison; screen-edge checks."},
+    {"invariant": "All core HUD functions remain reachable", "evidence": ["U1"], "implementation": "Reuse existing App snapshots, readings, Drain, details, settings and lifecycle", "acceptance": "Metric/provider/drives/alerts/settings/tray/update feature-retention checks in both presentations."},
+    {"invariant": "Native, non-disruptive and resource-adaptive behavior", "evidence": ["U1"], "implementation": "Existing Rust renderer; bounded transitions; no idle animation loop", "acceptance": "Reduced-motion and pressure settle tests, hidden lifecycle, dependency-closure check."}
+  ],
+  "adjustableValues": ["Initial geometry", "Unmeasured spring/timing parameters", "Platform work-area offsets", "Neon accent theme", "Optional pill/Nook selection"],
+  "outOfScope": ["Reusing the reference's brand name or bundled private assets", "Pretending unsupported OS integrations are connected", "Invented token or allowance measurements"],
+  "referenceAssignments": [{"source": "notchnook-desktop", "layers": ["Native Nook presentation", "Documented utilities", "Motion after playback observation"]}],
+  "rules": [
+    {"scope": "Data", "mechanism": "Existing system/provider backend", "constraints": ["Five-hour windows only when source reports them", "Preserve settings and connector configuration", "Show stale/missing status"]},
+    {"scope": "Persistence", "mechanism": "Revision-acknowledged productivity worker", "constraints": ["Atomic save and recovery", "Timer epoch deadline", "File references only"]}
+  ],
+  "effectContracts": [
+    {"effect": "Expansion/collapse", "states": ["collapsed", "peek", "expanded", "pinned"], "geometry": "UNKNOWN; initial implementation values tagged STARTING_VALUE", "timing": "UNKNOWN pending complete clip playback", "acceptanceViews": ["Normal playback", "Mid-transition frame", "Interrupted transition", "Reduced motion", "All screen edges"]}
+  ],
+  "handoff": {
+    "renderer": "Rust / eframe / egui / Glow",
+    "host": "Windows primary; macOS hosted build",
+    "verifiedCapabilities": ["Existing native Windows controls and hidden Quit passed alpha.4 hosted GUI gates", "Windows/macOS native builds pass"],
+    "unresolvedDependencies": ["Admitted official-reference playback", "New Nook native GUI validation", "Real platform adapters for media/calendar/mirror/device activities", "Target-machine installation admission"]
+  },
+  "validationLog": [],
+  "revisionLog": [{"date": "2026-10-07", "change": "Initial honest partial study; human explicitly retained core HUD features.", "status": "partial-observation"}]
+}
