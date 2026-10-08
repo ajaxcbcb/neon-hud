@@ -243,6 +243,7 @@ struct App {
     smoke: bool,
     smoke_interaction: bool,
     started: Instant,
+    smoke_timeout: Duration,
     quitting: bool,
     stopping: bool,
     startup_enabled: bool,
@@ -379,6 +380,13 @@ impl App {
             smoke,
             smoke_interaction,
             started: Instant::now(),
+            smoke_timeout: Duration::from_secs(if smoke_nook && smoke_interaction {
+                60
+            } else if smoke_interaction {
+                30
+            } else {
+                12
+            }),
             quitting: false,
             stopping: false,
             startup_enabled,
@@ -2687,10 +2695,7 @@ impl eframe::App for App {
                 self.started.elapsed().as_millis()
             );
         }
-        if self.smoke
-            && self.started.elapsed()
-                > Duration::from_secs(if self.smoke_interaction { 60 } else { 12 })
-        {
+        if self.smoke && self.started.elapsed() > self.smoke_timeout {
             self.quitting = true;
         }
         self.persist(ctx);
