@@ -811,8 +811,8 @@ impl App {
         }
         self.trace_control(
             ui,
-            "nook-settings",
             &settings_response,
+            "nook-settings",
             if self.settings { "open" } else { "closed" },
         );
         if expanded {
