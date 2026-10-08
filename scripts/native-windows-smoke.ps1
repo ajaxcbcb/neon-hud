@@ -47,6 +47,7 @@ public static class NativeHudCapture {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr window, ref POINT point);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
@@ -353,8 +354,17 @@ try {
             $window = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object Title -eq 'Neon HUD · Settings' | Select-Object -First 1
             if ($null -eq $window) { throw 'Owned settings window disappeared' }
             [NativeHudCapture]::SetForegroundWindow($window.Handle) | Out-Null
-            [NativeHudCapture]::SetCursorPos($window.Rect.Left+[int](($control.rect[0]+$control.rect[2])/2), $window.Rect.Top+[int](($control.rect[1]+$control.rect[3])/2)) | Out-Null
+            $scale = [double]$control.scale
+            if (-not [double]::IsFinite($scale) -or $scale -lt 0.5 -or $scale -gt 8) { throw 'Invalid settings viewport scale' }
+            $point = [NativeHudCapture+POINT]::new()
+            $point.X = [int][Math]::Round(($control.rect[0]+$control.rect[2])/2*$scale)
+            $point.Y = [int][Math]::Round(($control.rect[1]+$control.rect[3])/2*$scale)
+            if (-not [NativeHudCapture]::ClientToScreen($window.Handle, [ref]$point)) { throw 'Settings client origin unavailable' }
+            if (-not [NativeHudCapture]::SetCursorPos($point.X, $point.Y)) { throw 'Could not target owned settings control' }
             Start-Sleep -Milliseconds 80
+            if ([NativeHudCapture]::GetForegroundWindow() -ne $window.Handle -or [NativeHudCapture]::WindowFromPoint($point) -ne $window.Handle) {
+                throw "Settings control $Key is not exposed in the owned foreground window"
+            }
             [NativeHudCapture]::Click($false)
             Wait-SettingsControl $Key $Value | Out-Null
         }

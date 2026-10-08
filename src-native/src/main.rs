@@ -1065,6 +1065,11 @@ impl App {
                 .with_resizable(false)
                 .with_decorations(false)
                 .with_transparent(true)
+                .with_window_level(if flag(&self.profile, "alwaysOnTop") {
+                    egui::WindowLevel::AlwaysOnTop
+                } else {
+                    egui::WindowLevel::Normal
+                })
                 .with_position(if self.smoke { [250., 20.] } else { [120., 20.] }),
             |ctx, _| {
                 if ctx.input(|i| i.viewport().close_requested()) {
@@ -1753,7 +1758,7 @@ impl App {
         if !self.smoke || !self.smoke_interaction {
             return;
         }
-        let snapshot = json!({"key": key, "rect": [response.rect.min.x, response.rect.min.y, response.rect.max.x, response.rect.max.y], "value": value}).to_string();
+        let snapshot = json!({"key": key, "rect": [response.rect.min.x, response.rect.min.y, response.rect.max.x, response.rect.max.y], "scale": ui.ctx().pixels_per_point(), "value": value}).to_string();
         let id = egui::Id::new(("native-smoke-control", key));
         let changed = ui.ctx().data_mut(|data| {
             if data.get_temp::<String>(id).as_ref() == Some(&snapshot) {
