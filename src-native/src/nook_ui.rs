@@ -207,16 +207,16 @@ fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
         a == b
     }
 }
-fn capsule_size(progress: f32) -> [f64; 2] {
+fn capsule_size(progress: f32, size: NookSize) -> [f64; 2] {
     let (a, b, t) = if progress <= STARTING_VALUE_PEEK_PROGRESS {
         (
-            COLLAPSED_SIZE,
-            PEEK_SIZE,
+            size.collapsed_size(),
+            size.peek_size(),
             progress / STARTING_VALUE_PEEK_PROGRESS,
         )
     } else {
         (
-            PEEK_SIZE,
+            size.peek_size(),
             OPEN_SIZE,
             (progress - STARTING_VALUE_PEEK_PROGRESS) / (1. - STARTING_VALUE_PEEK_PROGRESS),
         )
@@ -235,12 +235,7 @@ fn icon_button(
     active: bool,
     accent: Color32,
 ) -> egui::Response {
-    let response = ui.interact(
-        rect,
-        ui.id()
-            .with((key, label, rect.min.x.to_bits(), rect.min.y.to_bits())),
-        Sense::click(),
-    );
+    let response = ui.interact(rect, ui.id().with((key, label)), Sense::click());
     if response.hovered() || active {
         ui.painter().rect_filled(
             rect,
@@ -277,6 +272,69 @@ impl App {
             flag(&self.profile, "reducedMotion") || text(&self.profile, "motion") == "quiet",
             self.mode != Mode::Normal,
         )
+    }
+    pub(crate) fn nook_preference(&self) -> PresentationPreference {
+        self.productivity
+            .as_ref()
+            .map(|c| c.state.presentation.clone())
+            .unwrap_or_default()
+    }
+    fn configure_nook(&mut self) {
+        let preference = self.nook_preference();
+        let style = if text(&self.profile, "motion") == "chaotic" {
+            MotionStyle::Chaotic
+        } else {
+            MotionStyle::Playful
+        };
+        self.nook_ui.presentation.configure(&preference, style);
+        if preference.pinned != self.nook_ui.presentation.is_pinned() {
+            let (reduced, pressure) = self.nook_motion_flags();
+            self.nook_ui
+                .presentation
+                .set_pinned(preference.pinned, epoch_ms(), reduced, pressure);
+            if !preference.pinned && !self.nook_ui.inside {
+                self.nook_ui.presentation.hover_leave(epoch_ms());
+            }
+        }
+    }
+    pub(crate) fn set_nook_preference(
+        &mut self,
+        preference: PresentationPreference,
+        ctx: &egui::Context,
+    ) {
+        if self.productivity.as_ref().is_none_or(|c| !c.writable()) {
+            return;
+        }
+        let old = self.nook_preference();
+        if old == preference {
+            return;
+        }
+        let size = preference.size.collapsed_size();
+        let moved = old.nook_position != preference.nook_position;
+        self.edit_productivity(|s| {
+            s.presentation = preference;
+            Ok(())
+        });
+        if moved {
+            self.nook_ui.anchor = None;
+            self.nook_ui.initialized = false;
+        } else if old.size != self.nook_preference().size {
+            if let Some(anchor) = self.nook_ui.anchor {
+                if let Some(placement) = nook_root_placement(anchor, size, &self.screens) {
+                    self.nook_ui.anchor = Some([
+                        placement.position[0],
+                        placement.position[1],
+                        placement.size[0],
+                        placement.size[1],
+                    ]);
+                    self.save_nook_anchor();
+                }
+            }
+        }
+        self.nook_ui.commanded = None;
+        self.configure_nook();
+        self.hover = None;
+        ctx.request_repaint_of(ViewportId::ROOT);
     }
     pub(crate) fn edit_productivity(
         &mut self,
@@ -331,7 +389,7 @@ impl App {
             }
             self.position_hold = Instant::now() + Duration::from_millis(350);
         }
-        ctx.request_repaint();
+        ctx.request_repaint_of(ViewportId::ROOT);
     }
     pub(crate) fn toggle_nook(&mut self, ctx: &egui::Context) {
         let (reduced, pressure) = self.nook_motion_flags();
@@ -406,14 +464,12 @@ impl App {
             .or_else(|| self.screens.iter().find(|s| s.primary))
             .or(self.screens.first());
         let target_scale = target_screen.map_or(scale, |s| s.scale);
-        let size = [
-            COLLAPSED_SIZE[0] * target_scale,
-            COLLAPSED_SIZE[1] * target_scale,
-        ];
+        let collapsed = preference.size.collapsed_size();
+        let size = collapsed.map(|v| v * target_scale);
         let position = preference
             .nook_position
             .as_ref()
-            .and_then(|p| restore_nook_position(p, COLLAPSED_SIZE, &self.screens))
+            .and_then(|p| restore_nook_position(p, collapsed, &self.screens))
             .or_else(|| {
                 target_screen.map(|s| {
                     [
@@ -462,14 +518,18 @@ impl App {
         }
     }
     fn place_nook(&mut self, ctx: &egui::Context, progress: f32) {
-        if self.nook_ui.dragging {
+        // Hold the native hit region through press AND release. Resizing between
+        // those events used to move settings/pin buttons away from the pointer.
+        if self.nook_ui.dragging || ctx.input(|i| i.pointer.any_down() || i.pointer.any_released())
+        {
             return;
         }
         let Some(anchor) = self.nook_ui.anchor else {
             return;
         };
         let scale = desktop::coordinate_scale(ctx.pixels_per_point());
-        let size = capsule_size(progress).map(|value| value * scale);
+        // Placement converts logical dimensions to the target monitor's scale.
+        let size = capsule_size(progress, self.nook_preference().size);
         let Some(placement) = nook_root_placement(anchor, size, &self.screens) else {
             return;
         };
@@ -508,6 +568,7 @@ impl App {
             return;
         }
         self.initialize_nook(ctx);
+        self.configure_nook();
         self.nook_file_events(ctx);
         let ms = epoch_ms();
         let (reduced, pressure) = self.nook_motion_flags();
@@ -575,12 +636,17 @@ impl App {
                 ui.painter().rect_stroke(
                     rect,
                     rounding,
-                    Stroke::new(1., Color32::from_gray(32)),
+                    Stroke::new(
+                        1.,
+                        self.palette()
+                            .accent
+                            .gamma_multiply(if inside { 0.45 } else { 0.18 }),
+                    ),
                     egui::StrokeKind::Inside,
                 );
                 let header = Rect::from_min_size(
                     rect.min + Vec2::new(10., 2.),
-                    Vec2::new(rect.width() - 20., 36.),
+                    Vec2::new(rect.width() - 20., (rect.height() - 4.).min(36.)),
                 );
                 self.nook_header(ui, header, progress, ctx);
                 if rect.height() >= 76. && progress > 0.15 {
@@ -661,12 +727,24 @@ impl App {
                 .click(epoch_ms(), reduced, pressure);
         }
         if !expanded {
-            let (cpu, cpu_label, cpu_attention) = self.reading("cpu");
-            let (_, ai_label, ai_attention) = self.reading("codex");
+            let keys = self.nook_metric_keys();
+            let primary = keys.first().copied();
+            let secondary = ["codex", "claude"]
+                .into_iter()
+                .find(|key| keys.contains(key) && Some(*key) != primary)
+                .or_else(|| keys.iter().copied().find(|key| Some(*key) != primary));
+            let (cpu, cpu_label, cpu_attention) =
+                primary
+                    .map(|key| self.reading(key))
+                    .unwrap_or((None, "Nook".into(), false));
+            let (_, ai_label, ai_attention) =
+                secondary
+                    .map(|key| self.reading(key))
+                    .unwrap_or((None, String::new(), false));
             paint::icon(
                 ui.painter(),
                 toggle.left_center() + Vec2::new(9., 0.),
-                "cpu",
+                primary.unwrap_or("spark"),
                 if cpu_attention {
                     paint::stress(100.)
                 } else {
@@ -707,7 +785,7 @@ impl App {
                 }) {
                     "timer"
                 } else {
-                    "codex"
+                    secondary.unwrap_or("spark")
                 },
                 if ai_attention {
                     self.palette().pop
@@ -767,7 +845,7 @@ impl App {
         }
     }
     pub(crate) fn nook_metric_keys(&self) -> Vec<&'static str> {
-        let mut keys = ["cpu", "gpu", "ram", "network", "storage", "codex", "claude"]
+        ["cpu", "gpu", "ram", "network", "storage", "codex", "claude"]
             .into_iter()
             .filter(|key| {
                 flag(
@@ -779,11 +857,7 @@ impl App {
                     },
                 )
             })
-            .collect::<Vec<_>>();
-        if keys.is_empty() {
-            keys.push("cpu");
-        }
-        keys
+            .collect::<Vec<_>>()
     }
     fn nook_metric(
         &mut self,
@@ -953,7 +1027,7 @@ impl App {
                     tab_rect,
                     7,
                     if active {
-                        Color32::from_gray(38)
+                        self.palette().accent.gamma_multiply(0.15)
                     } else {
                         SURFACE
                     },
@@ -965,14 +1039,14 @@ impl App {
                     egui::Align2::CENTER_CENTER,
                     tab.title(),
                     FontId::proportional(12.),
-                    if active { INK } else { DIM },
+                    if active { self.palette().accent } else { DIM },
                 );
             } else {
                 paint::icon(
                     ui.painter(),
                     tab_rect.center(),
                     tab.key(),
-                    if active { INK } else { DIM },
+                    if active { self.palette().accent } else { DIM },
                     15.,
                 );
             }
@@ -1027,6 +1101,16 @@ impl App {
     }
     fn nook_instruments(&mut self, ui: &mut egui::Ui, r: Rect, ctx: &egui::Context) {
         let keys = self.nook_metric_keys();
+        if keys.is_empty() {
+            ui.painter().text(
+                r.center(),
+                egui::Align2::CENTER_CENTER,
+                "Choose instruments in Settings",
+                FontId::proportional(13.),
+                DIM,
+            );
+            return;
+        }
         let width = r.width() / keys.len() as f32;
         for (i, key) in keys.iter().enumerate() {
             let cell = Rect::from_min_size(
@@ -1507,8 +1591,11 @@ impl App {
                     root.width() as f64 * scale,
                     root.height() as f64 * scale,
                 ];
-                if let Some(anchor) = nook_anchor_from_root(physical, COLLAPSED_SIZE, &self.screens)
-                {
+                if let Some(anchor) = nook_anchor_from_root(
+                    physical,
+                    self.nook_preference().size.collapsed_size(),
+                    &self.screens,
+                ) {
                     self.nook_ui.anchor = Some(anchor);
                 }
             }
@@ -1542,9 +1629,11 @@ impl App {
                 if let Some(mut anchor) = self.nook_ui.anchor {
                     anchor[0] += delta[0];
                     anchor[1] += delta[1];
-                    if let Some(placement) =
-                        nook_root_placement(anchor, COLLAPSED_SIZE, &self.screens)
-                    {
+                    if let Some(placement) = nook_root_placement(
+                        anchor,
+                        self.nook_preference().size.collapsed_size(),
+                        &self.screens,
+                    ) {
                         anchor = [
                             placement.position[0],
                             placement.position[1],
@@ -1657,13 +1746,30 @@ mod tests {
     use super::*;
     #[test]
     fn capsule_geometry_is_bounded_and_exact_at_each_state() {
-        assert_eq!(capsule_size(0.), COLLAPSED_SIZE);
-        assert_eq!(capsule_size(STARTING_VALUE_PEEK_PROGRESS), PEEK_SIZE);
-        assert_eq!(capsule_size(1.), OPEN_SIZE);
-        for i in 0..=100 {
-            let s = capsule_size(i as f32 / 100.);
-            assert!(s[0] >= COLLAPSED_SIZE[0] && s[0] <= OPEN_SIZE[0]);
-            assert!(s[1] >= COLLAPSED_SIZE[1] && s[1] <= OPEN_SIZE[1]);
+        for size in [NookSize::Mini, NookSize::Standard] {
+            assert_eq!(capsule_size(0., size), size.collapsed_size());
+            assert_eq!(
+                capsule_size(STARTING_VALUE_PEEK_PROGRESS, size),
+                size.peek_size()
+            );
+            assert_eq!(capsule_size(1., size), OPEN_SIZE);
+            for i in 0..=100 {
+                let s = capsule_size(i as f32 / 100., size);
+                assert!(s[0] >= size.collapsed_size()[0] && s[0] <= OPEN_SIZE[0]);
+                assert!(s[1] >= size.collapsed_size()[1] && s[1] <= OPEN_SIZE[1]);
+            }
+            let screens = [Screen {
+                id: "scaled".into(),
+                name: "scaled".into(),
+                origin: [0., 0.],
+                size: [3840., 2160.],
+                scale: 2.,
+                primary: true,
+            }];
+            let closed = size.collapsed_size();
+            let anchor = [100., 0., closed[0] * 2., closed[1] * 2.];
+            let placement = nook_root_placement(anchor, capsule_size(1., size), &screens).unwrap();
+            assert_eq!(placement.size, [OPEN_SIZE[0] * 2., OPEN_SIZE[1] * 2.]);
         }
     }
     #[test]

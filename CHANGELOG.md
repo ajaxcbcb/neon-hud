@@ -4,6 +4,12 @@ Current native preview: [0.2.0-alpha.6](https://github.com/ajaxcbcb/neon-hud/rel
 
 ## Unreleased
 
+- Alpha.7 candidate: repair Codex Connect/Disconnect and saved-intent restoration in installed native profiles; keep explicit smoke mode isolated from real Codex and Claude configuration.
+- Show full connector action feedback and Claude bridge-enabled/waiting status in Connections.
+- Add Preferences → Notch: Mini/Regular capsule, hover peek, auto-close, pin, screen and reset; persist these independently of notes, tasks and timers.
+- Honor selected instruments and theme in Nook; distinguish Playful/Chaos, shorten hover response, preserve click targets during expansion and correct scaling on high-DPI displays.
+- Add persistence, interaction-policy, motion and scale regressions, plus isolated physical Windows settings checks. See the [candidate notes](docs/releases/v0.2.0-alpha.7.md) for acceptance status.
+
 - Separate Windows development-signing workflow: fresh locked native build, non-exportable ephemeral certificate, SHA-256 Authenticode/RFC3161 timestamp verification and labeled package with public certificate and receipt. Temporary trust is confined to the disposable hosted VM; exact certificate and persisted key removal gates packaging. Child tools have deadlines and UTC diagnostics, and injected exit/timeout cases check cleanup. The [accepted cloud run](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed 49 native tests, signing and physical Nook input. This is not publicly trusted publisher signing or Defender clearance; public update assets remain unchanged.
 - Document the target alpha.6 Defender quarantine and pending runtime/Nook acceptance. Explicit Nook selection is required when replacing a retained Pill profile.
 

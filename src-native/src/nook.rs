@@ -3,7 +3,7 @@ use crate::model::{HoverPlacement, Screen};
 use serde::{Deserialize, Serialize};
 
 // STARTING_VALUE: reference timing has not yet been admitted or measured.
-pub const STARTING_VALUE_HOVER_DWELL_MS: i64 = 220;
+pub const STARTING_VALUE_HOVER_DWELL_MS: i64 = 120;
 pub const STARTING_VALUE_COLLAPSE_DELAY_MS: i64 = 500;
 pub const STARTING_VALUE_MOTION_MS: i64 = 180;
 pub const STARTING_VALUE_FRAME_MS: i64 = 16;
@@ -18,6 +18,48 @@ pub enum PresentationMode {
     Pill,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NookSize {
+    Mini,
+    #[default]
+    Standard,
+}
+
+impl NookSize {
+    pub fn collapsed_size(self) -> [f64; 2] {
+        match self {
+            Self::Mini => [200., 36.],
+            Self::Standard => [240., 40.],
+        }
+    }
+    pub fn peek_size(self) -> [f64; 2] {
+        match self {
+            Self::Mini => [480., 104.],
+            Self::Standard => [520., 112.],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MotionStyle {
+    #[default]
+    Playful,
+    Chaotic,
+}
+
+fn motion_easing(fraction: f32, style: MotionStyle) -> f32 {
+    let t = fraction.clamp(0., 1.);
+    match style {
+        MotionStyle::Playful => 1. - (1. - t).powi(3),
+        MotionStyle::Chaotic => {
+            // A brief, bounded settle; no idle animation or geometry overshoot.
+            (1. - (1. - t).powi(4) + (t * std::f32::consts::TAU * 2.).sin() * t * (1. - t) * 0.12)
+                .clamp(0., 1.)
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedNookPosition {
     pub monitor_id: String,
@@ -26,12 +68,28 @@ pub struct SavedNookPosition {
     pub y: i32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PresentationPreference {
     pub mode: PresentationMode,
     pub pinned: bool,
     pub nook_position: Option<SavedNookPosition>,
+    pub size: NookSize,
+    pub hover_to_peek: bool,
+    pub auto_collapse: bool,
+}
+
+impl Default for PresentationPreference {
+    fn default() -> Self {
+        Self {
+            mode: PresentationMode::Nook,
+            pinned: false,
+            nook_position: None,
+            size: NookSize::Standard,
+            hover_to_peek: true,
+            auto_collapse: true,
+        }
+    }
 }
 
 impl PresentationPreference {
@@ -62,6 +120,7 @@ struct Motion {
     from: f32,
     to: f32,
     started_ms: i64,
+    style: MotionStyle,
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +130,9 @@ pub struct PresentationState {
     collapse_at_ms: Option<i64>,
     motion: Option<Motion>,
     dragging: bool,
+    hover_to_peek: bool,
+    auto_collapse: bool,
+    style: MotionStyle,
 }
 
 impl PresentationState {
@@ -85,6 +147,20 @@ impl PresentationState {
             collapse_at_ms: None,
             motion: None,
             dragging: false,
+            hover_to_peek: preference.hover_to_peek,
+            auto_collapse: preference.auto_collapse,
+            style: MotionStyle::Playful,
+        }
+    }
+    pub fn configure(&mut self, preference: &PresentationPreference, style: MotionStyle) {
+        self.hover_to_peek = preference.hover_to_peek;
+        self.auto_collapse = preference.auto_collapse;
+        self.style = style;
+        if !self.hover_to_peek {
+            self.hover_since_ms = None;
+        }
+        if !self.auto_collapse {
+            self.collapse_at_ms = None;
         }
     }
     pub fn is_pinned(&self) -> bool {
@@ -99,8 +175,7 @@ impl PresentationState {
             Some(motion) => {
                 let elapsed = now_ms.saturating_sub(motion.started_ms).max(0);
                 let fraction = (elapsed as f32 / STARTING_VALUE_MOTION_MS as f32).clamp(0., 1.);
-                // Smoothstep is bounded, including after sleep or a clock adjustment.
-                let eased = fraction * fraction * (3. - 2. * fraction);
+                let eased = motion_easing(fraction, motion.style);
                 (motion.from + (motion.to - motion.from) * eased).clamp(0., 1.)
             }
             None => target,
@@ -126,6 +201,7 @@ impl PresentationState {
                 from,
                 to,
                 started_ms: now_ms,
+                style: self.style,
             })
         };
         true
@@ -171,13 +247,16 @@ impl PresentationState {
     }
     pub fn hover_enter(&mut self, now_ms: i64) {
         self.collapse_at_ms = None;
-        if self.phase == Phase::Collapsed {
+        if self.phase == Phase::Collapsed && self.hover_to_peek {
             self.hover_since_ms = Some(now_ms);
         }
     }
     pub fn hover_leave(&mut self, now_ms: i64) {
         self.hover_since_ms = None;
-        if matches!(self.phase, Phase::Peek | Phase::Expanded) && !self.dragging {
+        if self.auto_collapse
+            && matches!(self.phase, Phase::Peek | Phase::Expanded)
+            && !self.dragging
+        {
             self.collapse_at_ms = Some(now_ms.saturating_add(STARTING_VALUE_COLLAPSE_DELAY_MS));
         }
     }
@@ -223,7 +302,7 @@ impl PresentationState {
     }
     pub fn outside(&mut self, now_ms: i64, reduced_motion: bool, pressure: bool) -> bool {
         self.hover_since_ms = None;
-        if self.is_pinned() || self.dragging {
+        if !self.auto_collapse || self.is_pinned() || self.dragging {
             return false;
         }
         self.collapse_at_ms = None;
@@ -241,7 +320,7 @@ impl PresentationState {
     }
     pub fn drag_end(&mut self, inside: bool, now_ms: i64) {
         self.dragging = false;
-        if !inside && !self.is_pinned() {
+        if self.auto_collapse && !inside && !self.is_pinned() {
             self.collapse_at_ms = Some(now_ms.saturating_add(STARTING_VALUE_COLLAPSE_DELAY_MS));
         }
     }
@@ -596,6 +675,73 @@ mod tests {
         assert_eq!(state.next_wake_ms(1_001), None);
         state.escape(1_010, false, true);
         assert_eq!(state.progress(1_010, false, true), 0.);
+    }
+    #[test]
+    fn existing_preferences_upgrade_without_changing_layout_or_pin() {
+        let preference: PresentationPreference = serde_json::from_value(serde_json::json!({
+            "mode": "pill", "pinned": true,
+            "nook_position": { "monitor_id": "first", "x": 12, "y": 34 }
+        }))
+        .unwrap();
+        assert_eq!(preference.mode, PresentationMode::Pill);
+        assert!(preference.pinned);
+        assert_eq!(preference.size, NookSize::Standard);
+        assert!(preference.hover_to_peek && preference.auto_collapse);
+        assert_eq!(preference.nook_position.unwrap().x, 12);
+    }
+    #[test]
+    fn hover_and_auto_collapse_policies_apply_to_pending_input_and_drag() {
+        let mut preference = PresentationPreference::default();
+        let mut state = PresentationState::new(&preference);
+        state.hover_enter(0);
+        preference.hover_to_peek = false;
+        state.configure(&preference, MotionStyle::Playful);
+        assert!(!state.advance(500, false, false));
+        state.hover_enter(600);
+        assert_eq!(state.next_wake_ms(600), None);
+        assert!(state.click(700, true, false));
+        state.hover_leave(800);
+        preference.auto_collapse = false;
+        state.configure(&preference, MotionStyle::Playful);
+        assert!(!state.advance(1500, true, false));
+        assert!(!state.outside(1500, true, false));
+        state.drag_start(1600, true, false);
+        state.drag_end(false, 1700);
+        assert_eq!(state.next_wake_ms(1700), None);
+        assert_eq!(state.phase, Phase::Expanded);
+        assert!(state.escape(1800, true, false));
+        preference.hover_to_peek = true;
+        preference.auto_collapse = true;
+        state.configure(&preference, MotionStyle::Chaotic);
+        state.hover_enter(2000);
+        assert!(state.advance(2000 + STARTING_VALUE_HOVER_DWELL_MS, true, false));
+        assert_eq!(state.phase, Phase::Peek);
+        state.hover_leave(2200);
+        assert!(state.advance(2200 + STARTING_VALUE_COLLAPSE_DELAY_MS, true, false));
+        assert_eq!(state.phase, Phase::Collapsed);
+    }
+    #[test]
+    fn motion_responds_early_stays_bounded_and_retargets_without_a_jump() {
+        let preference = PresentationPreference::default();
+        let mut playful = PresentationState::new(&preference);
+        playful.click(1000, false, false);
+        let mut chaotic = PresentationState::new(&preference);
+        chaotic.configure(&preference, MotionStyle::Chaotic);
+        chaotic.click(1000, false, false);
+        assert!(playful.progress(1045, false, false) > 0.5);
+        assert!(
+            (playful.progress(1045, false, false) - chaotic.progress(1045, false, false)).abs()
+                > 0.05
+        );
+        for elapsed in 0..=STARTING_VALUE_MOTION_MS {
+            assert!((0.0..=1.0).contains(&chaotic.progress(1000 + elapsed, false, false)));
+        }
+        let before = chaotic.progress(1080, false, false);
+        chaotic.escape(1080, false, false);
+        assert!((chaotic.progress(1080, false, false) - before).abs() < f32::EPSILON);
+        chaotic.advance(1080 + STARTING_VALUE_MOTION_MS, false, false);
+        assert_eq!(chaotic.progress(2000, false, false), 0.);
+        assert_eq!(chaotic.next_wake_ms(2000), None);
     }
     #[test]
     fn geometry_clamps_across_edges_and_scaled_monitors() {

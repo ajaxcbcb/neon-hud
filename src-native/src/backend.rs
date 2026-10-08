@@ -30,7 +30,7 @@ pub struct Worker {
     pub rx: Receiver<Event>,
 }
 impl Worker {
-    pub fn start(dir: PathBuf, ctx: egui::Context) -> Self {
+    pub fn start(dir: PathBuf, ctx: egui::Context, preview: bool) -> Self {
         let (tx, commands) = mpsc::sync_channel(8);
         let (events, rx) = mpsc::channel();
         thread::spawn(move || {
@@ -38,7 +38,12 @@ impl Worker {
                 let _ = events.send(e);
                 ctx.request_repaint();
             };
-            let mut core = match NativeBackend::new(dir) {
+            let backend = if preview {
+                NativeBackend::new_preview(dir)
+            } else {
+                NativeBackend::new(dir)
+            };
+            let mut core = match backend {
                 Ok(c) => c,
                 Err(e) => {
                     send(Event::Loaded(Err(e)));

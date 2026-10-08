@@ -222,6 +222,7 @@ struct App {
     last_providers: Instant,
     status: String,
     busy: bool,
+    connection_status: String,
     mode: Mode,
     mode_since: Instant,
     tray: Option<Tray>,
@@ -308,7 +309,7 @@ impl App {
             Err(error) => (None, format!("Nook utilities unavailable: {error}")),
         };
         Self {
-            worker: Worker::start(dir.clone(), ctx.clone()),
+            worker: Worker::start(dir.clone(), ctx.clone(), smoke),
             update_worker: updater::Worker::start(dir.clone(), ctx.clone()),
             update_preferences: std::fs::read(dir.join("updater-settings.json"))
                 .ok()
@@ -351,6 +352,7 @@ impl App {
             last_providers: Instant::now() - Duration::from_secs(60),
             status,
             busy: false,
+            connection_status: String::new(),
             mode: Mode::Normal,
             mode_since: Instant::now(),
             tray,
@@ -406,18 +408,18 @@ impl App {
         if self.busy {
             return;
         }
-        let connection_intent = match &c {
-            Command::Connect(_) => Some(true),
-            Command::Disconnect => Some(false),
-            _ => None,
+        let message = match &c {
+            Command::Connect(true) => "Opening Codex sign-in…",
+            Command::Connect(false) => "Connecting to Codex…",
+            Command::Disconnect => "Disconnecting Codex…",
+            Command::Claude(true) => "Enabling the Claude Code bridge…",
+            Command::Claude(false) => "Disabling the Claude Code bridge…",
+            _ => "Working…",
         };
         if self.command(c) {
-            if let Some(enabled) = connection_intent {
-                self.profile["codexEnabled"] = json!(enabled);
-                self.dirty();
-            }
             self.busy = true;
-            self.status = "Connecting…".into();
+            self.connection_status = message.into();
+            self.status = message.into();
         }
     }
     fn compress(&mut self, ctx: &egui::Context) {
@@ -504,7 +506,7 @@ impl App {
                     if !self.smoke {
                         self.settings |= !flag(&self.profile, "completed");
                     }
-                    // Preview launch never enables connectors or startup automatically.
+                    // First launch keeps startup opt-in; saved connector intent is restored by the backend.
                 }
                 Event::Loaded(Err(e)) => {
                     self.loaded = true;
@@ -578,6 +580,9 @@ impl App {
                 Event::Action(r) => {
                     self.busy = false;
                     self.status = r.unwrap_or_else(|e| format!("Connection failed: {e}"));
+                    self.connection_status = self.status.clone();
+                    // Intent is committed by the backend before acknowledging;
+                    // optimistic UI edits must not claim a failed connect saved.
                     self.last_providers = Instant::now() - Duration::from_secs(120);
                 }
                 Event::Stopped => {
@@ -592,7 +597,8 @@ impl App {
                             self.applying_update = false;
                             self.quitting = false;
                             self.stopping = false;
-                            self.worker = Worker::start(self.profile_dir.clone(), ctx.clone());
+                            self.worker =
+                                Worker::start(self.profile_dir.clone(), ctx.clone(), self.smoke);
                             self.restart_productivity();
                             self.settings = true;
                             self.show(ctx);
@@ -1038,6 +1044,10 @@ impl App {
             return;
         }
         let p = self.palette();
+        let before = (
+            self.revision,
+            self.productivity.as_ref().map(|c| c.revision()),
+        );
         ctx.show_viewport_immediate(
             ViewportId::from_hash_of("settings"),
             ViewportBuilder::default()
@@ -1164,16 +1174,28 @@ impl App {
                             if response.clicked() {
                                 self.page = i;
                             }
+                            self.trace_control(
+                                ui,
+                                &response,
+                                &format!("page-{i}"),
+                                if self.page == i { "selected" } else { "idle" },
+                            );
                         }
                         let content = Rect::from_min_size(at(28., 140.), Vec2::new(684., 474.));
-                        ui.scope_builder(egui::UiBuilder::new().max_rect(content), |ui| {
-                            ui.set_clip_rect(content);
-                            ui.add_enabled_ui(self.writable, |ui| match self.page {
-                                0 => self.appearance(ui, ctx),
-                                1 => self.connections(ui),
-                                _ => self.preferences(ui, ctx),
-                            });
-                        });
+                        ui.scope_builder(
+                            egui::UiBuilder::new()
+                                .id_salt("settings-content")
+                                .max_rect(content)
+                                .sense(Sense::hover()),
+                            |ui| {
+                                ui.set_clip_rect(content);
+                                ui.add_enabled_ui(self.writable, |ui| match self.page {
+                                    0 => self.appearance(ui, ctx),
+                                    1 => self.connections(ui),
+                                    _ => self.preferences(ui, ctx),
+                                });
+                            },
+                        );
                         let footer = Rect::from_min_size(at(1., 623.), Vec2::new(738., 56.));
                         ui.painter().rect_filled(footer, 17, p.panel);
                         ui.painter()
@@ -1182,7 +1204,19 @@ impl App {
                             self.status.clone()
                         } else if !self.writable {
                             "Loading profile…".into()
-                        } else if self.save_pending || self.saved < self.revision {
+                        } else if self
+                            .productivity
+                            .as_ref()
+                            .is_some_and(|c| c.error().is_some())
+                        {
+                            self.productivity_status.clone()
+                        } else if self.save_pending
+                            || self.saved < self.revision
+                            || self
+                                .productivity
+                                .as_ref()
+                                .is_some_and(|c| c.saved_revision() < c.revision())
+                        {
                             "Saving preferences…".into()
                         } else {
                             "LOCAL FIRST · SMALL BY DESIGN · SAVED".into()
@@ -1252,6 +1286,14 @@ impl App {
                     });
             },
         );
+        if before
+            != (
+                self.revision,
+                self.productivity.as_ref().map(|c| c.revision()),
+            )
+        {
+            ctx.request_repaint_of(ViewportId::ROOT);
+        }
     }
     fn bool_setting(&mut self, ui: &mut egui::Ui, key: &str, label: &str) {
         let mut v = flag(&self.profile, key);
@@ -1341,7 +1383,7 @@ impl App {
         .enumerate()
         {
             let rect = Rect::from_min_size(at(0., 192. + i as f32 * 63.), Vec2::new(294., 54.));
-            if paint::choice_card(
+            let response = paint::choice_card(
                 ui,
                 rect,
                 key,
@@ -1350,12 +1392,17 @@ impl App {
                 icon,
                 text(&self.profile, "theme") == *key,
                 Palette::new(key),
-            )
-            .clicked()
-            {
+            );
+            if response.clicked() {
                 self.profile["theme"] = json!(key);
                 self.dirty();
             }
+            self.trace_control(
+                ui,
+                &response,
+                &format!("theme-{key}"),
+                text(&self.profile, "theme"),
+            );
         }
         ui.painter().text(
             at(0., 390.),
@@ -1373,7 +1420,7 @@ impl App {
         .enumerate()
         {
             let rect = Rect::from_min_size(at(i as f32 * 101., 408.), Vec2::new(92., 56.));
-            if paint::motion_card(
+            let response = paint::motion_card(
                 ui,
                 rect,
                 key,
@@ -1381,31 +1428,53 @@ impl App {
                 icon,
                 text(&self.profile, "motion") == *key,
                 p,
-            )
-            .clicked()
-            {
+            );
+            if response.clicked() {
                 self.profile["motion"] = json!(key);
                 self.dirty();
             }
+            self.trace_control(
+                ui,
+                &response,
+                &format!("motion-{key}"),
+                text(&self.profile, "motion"),
+            );
         }
-        paint::appearance_preview(
-            ui,
-            Rect::from_min_size(at(314., 172.), Vec2::new(370., 292.)),
-            p,
-            text(&self.profile, "size") == "compressed",
-        );
+        let preview = Rect::from_min_size(at(314., 172.), Vec2::new(370., 292.));
+        if self.is_nook() {
+            paint::nook_preview(
+                ui,
+                preview,
+                p,
+                self.nook_preference().size == nook::NookSize::Mini,
+                flag(&self.profile, "reducedMotion") || text(&self.profile, "motion") == "quiet",
+            );
+        } else {
+            paint::appearance_preview(ui, preview, p, text(&self.profile, "size") == "compressed");
+        }
     }
     fn preferences(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.colored_label(self.palette().accent, "STEP 03 / MAKE IT FIT YOUR DAY");
         ui.add_space(12.);
         ui.horizontal(|ui| {
-            for (i, name) in ["Instruments", "Startup & updates"].iter().enumerate() {
-                if ui
-                    .selectable_label(self.preferences_tab == i, *name)
-                    .clicked()
-                {
+            for (i, name) in ["Notch", "Instruments", "Startup & updates"]
+                .iter()
+                .enumerate()
+            {
+                let response = ui.selectable_label(self.preferences_tab == i, *name);
+                if response.clicked() {
                     self.preferences_tab = i;
                 }
+                self.trace_control(
+                    ui,
+                    &response,
+                    &format!("preferences-{i}"),
+                    if self.preferences_tab == i {
+                        "selected"
+                    } else {
+                        "idle"
+                    },
+                );
             }
         });
         ui.separator();
@@ -1432,22 +1501,134 @@ impl App {
                     });
                 },
             );
-            self.metrics(ui);
             ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Pill size");
-                for (key, label) in [("compressed", "Tiny · 160"), ("compact", "Regular · 280")] {
-                    if ui
-                        .selectable_label(text(&self.profile, "size") == key, label)
-                        .clicked()
+            if self.is_nook() {
+                ui.add_enabled_ui(
+                    self.productivity.as_ref().is_some_and(|c| c.writable()),
+                    |ui| {
+                        let mut preference = self.nook_preference();
+                        ui.heading("Your notch");
+                        ui.horizontal(|ui| {
+                            ui.label("Closed size");
+                            for (size, label) in [
+                                (nook::NookSize::Mini, "Mini · 200"),
+                                (nook::NookSize::Standard, "Regular · 240"),
+                            ] {
+                                let response =
+                                    ui.selectable_value(&mut preference.size, size, label);
+                                self.trace_control(
+                                    ui,
+                                    &response,
+                                    if size == nook::NookSize::Mini {
+                                        "notch-mini"
+                                    } else {
+                                        "notch-standard"
+                                    },
+                                    if preference.size == size {
+                                        "selected"
+                                    } else {
+                                        "idle"
+                                    },
+                                );
+                            }
+                        });
+                        let response = ui.checkbox(
+                            &mut preference.hover_to_peek,
+                            "Hover to peek at instruments",
+                        );
+                        self.trace_control(
+                            ui,
+                            &response,
+                            "notch-hover",
+                            if preference.hover_to_peek {
+                                "on"
+                            } else {
+                                "off"
+                            },
+                        );
+                        let response = ui.checkbox(
+                            &mut preference.auto_collapse,
+                            "Close automatically when I leave",
+                        );
+                        self.trace_control(
+                            ui,
+                            &response,
+                            "notch-collapse",
+                            if preference.auto_collapse {
+                                "on"
+                            } else {
+                                "off"
+                            },
+                        );
+                        let response = ui.checkbox(&mut preference.pinned, "Keep the notch open");
+                        self.trace_control(
+                            ui,
+                            &response,
+                            "notch-pin",
+                            if preference.pinned { "on" } else { "off" },
+                        );
+                        self.set_nook_preference(preference, ctx);
+                        ui.add_space(8.);
+                        ui.label("Screen");
+                        let screens = self.screens.clone();
+                        ui.horizontal_wrapped(|ui| {
+                            for screen in screens {
+                                if ui
+                                    .button(if screen.name.is_empty() {
+                                        screen.id.clone()
+                                    } else {
+                                        screen.name.clone()
+                                    })
+                                    .clicked()
+                                {
+                                    let mut preference = self.nook_preference();
+                                    let width = preference.size.collapsed_size()[0] * screen.scale;
+                                    preference.nook_position = nook::remember_nook_position(
+                                        [
+                                            screen.origin[0]
+                                                + (screen.size[0] - width).max(0.) / 2.,
+                                            screen.origin[1],
+                                        ],
+                                        &self.screens,
+                                    );
+                                    self.set_nook_preference(preference, ctx);
+                                }
+                            }
+                            let response = ui.button("Reset position");
+                            if response.clicked() {
+                                self.reset_nook(ctx);
+                            }
+                            self.trace_control(ui, &response, "notch-reset", "ready");
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "Drag the dots to move · arrow keys to nudge · Esc to close",
+                            )
+                            .small()
+                            .color(self.palette().dim),
+                        );
+                    },
+                );
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label("Pill size");
+                    for (key, label) in [("compressed", "Tiny · 160"), ("compact", "Regular · 280")]
                     {
-                        self.profile["size"] = json!(key);
-                        self.dirty();
-                        self.resize(ctx);
+                        if ui
+                            .selectable_label(text(&self.profile, "size") == key, label)
+                            .clicked()
+                        {
+                            self.profile["size"] = json!(key);
+                            self.dirty();
+                            self.resize(ctx);
+                        }
                     }
-                }
-            });
+                });
+            }
+            ui.add_space(8.);
             self.bool_setting(ui, "reducedMotion", "Reduce motion");
+        } else if self.preferences_tab == 1 {
+            self.metrics(ui);
         } else {
             self.startup_page(ui);
             let old = flag(&self.profile, "alwaysOnTop");
@@ -1476,10 +1657,17 @@ impl App {
                 ("ai", "AI"),
             ] {
                 let mut v = flag(&self.profile["metrics"], key);
-                if ui.checkbox(&mut v, label).changed() {
+                let response = ui.checkbox(&mut v, label);
+                if response.changed() {
                     self.profile["metrics"][key] = json!(v);
                     self.dirty();
                 }
+                self.trace_control(
+                    ui,
+                    &response,
+                    &format!("metric-{key}"),
+                    if v { "on" } else { "off" },
+                );
             }
         });
         ui.add_space(8.);
@@ -1551,6 +1739,26 @@ impl App {
             }
         });
     }
+    /// Geometry and non-sensitive control state for isolated physical-input CI.
+    /// Never enabled in an installed application.
+    fn trace_control(&self, ui: &egui::Ui, response: &egui::Response, key: &str, value: &str) {
+        if !self.smoke || !self.smoke_interaction {
+            return;
+        }
+        let snapshot = json!({"key": key, "rect": [response.rect.min.x, response.rect.min.y, response.rect.max.x, response.rect.max.y], "value": value}).to_string();
+        let id = egui::Id::new(("native-smoke-control", key));
+        let changed = ui.ctx().data_mut(|data| {
+            if data.get_temp::<String>(id).as_ref() == Some(&snapshot) {
+                false
+            } else {
+                data.insert_temp(id, snapshot.clone());
+                true
+            }
+        });
+        if changed {
+            eprintln!("NEON_CONTROL {snapshot}");
+        }
+    }
     fn connections(&mut self, ui: &mut egui::Ui) {
         ui.colored_label(self.palette().accent, "STEP 02 / CONNECT YOUR SOURCES");
         ui.add_space(12.);
@@ -1560,9 +1768,7 @@ impl App {
         ui.label(
             egui::RichText::new(format!(
                 "Codex · {}",
-                if self.busy {
-                    "connecting…"
-                } else if text(&codex, "state").is_empty() {
+                if text(&codex, "state").is_empty() {
                     "disconnected"
                 } else {
                     text(&codex, "state")
@@ -1570,9 +1776,21 @@ impl App {
             ))
             .color(self.palette().accent),
         );
-        ui.add_enabled_ui(!self.busy, |ui| {
+        ui.label(egui::RichText::new(text(&codex, "message")).small());
+        ui.add_enabled_ui(!self.busy && !self.smoke, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("Connect").clicked() {
+                let connect = ui.button("Connect");
+                self.trace_control(
+                    ui,
+                    &connect,
+                    "codex-connect",
+                    if connect.enabled() {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                );
+                if connect.clicked() {
                     self.action(Command::Connect(false));
                 }
                 if ui.button("Sign in").clicked() {
@@ -1593,9 +1811,37 @@ impl App {
             }
         ));
         ui.label(egui::RichText::new(text(&claude, "message")).small());
-        ui.add_enabled_ui(!self.busy, |ui| {
+        let bridge_enabled = flag(&self.providers, "claudeBridgeEnabled");
+        ui.colored_label(
+            if bridge_enabled {
+                self.palette().accent
+            } else {
+                self.palette().dim
+            },
+            if bridge_enabled {
+                "Bridge enabled · reconnects when Claude Code starts"
+            } else {
+                "Bridge not enabled"
+            },
+        );
+        ui.add_enabled_ui(!self.busy && !self.smoke, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("Enable shared bridge").clicked() {
+                let enable = ui.button(if bridge_enabled {
+                    "Repair bridge"
+                } else {
+                    "Enable bridge"
+                });
+                self.trace_control(
+                    ui,
+                    &enable,
+                    "claude-enable",
+                    if enable.enabled() {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                );
+                if enable.clicked() {
                     self.action(Command::Claude(true));
                 }
                 if ui.button("Disable shared bridge").clicked() {
@@ -1603,12 +1849,17 @@ impl App {
                 }
             });
         });
-        ui.add_space(14.);
+        ui.add_space(10.);
+        if !self.connection_status.is_empty() {
+            ui.label(egui::RichText::new(&self.connection_status).color(self.palette().pop));
+        }
+        ui.label(egui::RichText::new("Codex uses your local CLI account. Enable the Claude bridge once, then start or restart Claude Code to send usage and questions.").small());
+        ui.add_space(10.);
         ui.label(egui::RichText::new("ChatGPT chat allowance has no supported local source.\nCodex allowance is shown separately. Claude Code shares\nthe Claude allowance. Five-hour limits appear when reported.").small().color(self.palette().dim));
         ui.add_space(10.);
-        ui.label(
-            egui::RichText::new("This preview retains the existing connector helpers.").small(),
-        );
+        if self.smoke {
+            ui.label("Isolated test mode · connections disabled");
+        }
     }
     fn startup_page(&mut self, ui: &mut egui::Ui) {
         ui.heading("Ready when you are");
@@ -2438,7 +2689,7 @@ impl eframe::App for App {
         }
         if self.smoke
             && self.started.elapsed()
-                > Duration::from_secs(if self.smoke_interaction { 30 } else { 12 })
+                > Duration::from_secs(if self.smoke_interaction { 60 } else { 12 })
         {
             self.quitting = true;
         }

@@ -6,13 +6,13 @@ A small, floating desktop utility for Windows and macOS: system performance, AI 
 
 [Download alpha.6](https://github.com/ajaxcbcb/neon-hud/releases/tag/v0.2.0-alpha.6) · [Feature guide](docs/FEATURES.md) · [Native setup and controls](src-native/README.md) · [Changelog](CHANGELOG.md) · [Release notes](docs/releases/v0.2.0-alpha.6.md) · [Validation](docs/VALIDATION.md)
 
-Rust/egui/glow draws the floating HUD and custom neon frame directly. The new **Nook** presentation opens from a 240 × 40 capsule into a shallow panel of music, calendar, notes, timer, tasks and quick actions. Nook/Tray navigation and a numerical CPU/GPU/RAM/network/drives/Codex/Claude rail keep your tools and measurements together. Hover peeks, click opens, pin holds it open and Escape collapses it. Choose the layout and movable 160 × 56 compressed or 280 × 56 regular pill in **Preferences → Instruments**. Existing profiles keep their saved presentation; fresh profiles start in Nook.
+Rust/egui/glow draws the floating HUD and custom neon frame directly. **Nook** opens from a capsule into a shallow panel of music, calendar, notes, timer, tasks and quick actions. Nook/Tray navigation and a numerical CPU/GPU/RAM/network/drives/Codex/Claude rail keep your tools and measurements together. Hover peeks, click opens, pin holds it open and Escape collapses it. Existing profiles keep their saved presentation; fresh profiles start in Nook. The [alpha.7 candidate](docs/releases/v0.2.0-alpha.7.md) adds **Preferences → Notch** for Mini (200 × 36) or Regular (240 × 40), hover, auto-close, pin and placement. The alternate floating pill remains available.
 
 ![Native Nook with simultaneous utility widgets and numerical system readings](docs/assets/native-nook.png)
 
 Actual Windows cloud capture. System readings belong to the runner; unavailable media, calendar and AI sources are shown explicitly. See the [reference study](reference-learning/notchnook/study.md) for observed NotchNook states and the limits of the animation comparison.
 
-Appearance, Connections and Preferences remain fixed setup steps. Theme cards, motion choices and a labeled sample pill retain the playful layout; settings have no scrolling or conventional OS title bar.
+Appearance, Connections and Preferences remain fixed setup steps. Theme cards, motion choices and a labeled sample of the selected layout retain the playful layout; settings have no scrolling or conventional OS title bar.
 
 ![Native custom neon settings frame captured on Windows](docs/assets/native-settings.png)
 
@@ -29,7 +29,7 @@ Keep the bundled license and notice files with the app. These are preview packag
 
 The target Windows alpha.6 executable was subsequently quarantined by Microsoft Defender; target launch and Nook acceptance remain blocked. The separate [self-signed development build](https://github.com/ajaxcbcb/neon-hud/actions/runs/37689111604) passed 49 native tests, timestamp/signature verification, certificate/key cleanup and physical Nook controls. Its certificate is not publicly trusted and does not establish Defender clearance. It does not replace the published alpha.6 assets or update feed. See [development signing](docs/releases/MAINTENANCE.md#self-signed-windows-development-build) and [validation](docs/VALIDATION.md) for the exact source and receipts.
 
-The first configuration step is **Appearance**, followed by **Connections** and **Preferences**. Pick Neon Circuit, Cyberpunk Night or Aurora, and Quiet, Playful or Chaotic motion. **Preferences → Instruments** chooses Nook or the floating pill, selected drives and metrics. **Preferences → Startup & updates** controls login startup and updates. Startup is opt-in; replacing an installation should preserve its existing enabled/disabled choice.
+The first configuration step is **Appearance**, followed by **Connections** and **Preferences**. Pick Neon Circuit, Cyberpunk Night or Aurora, and Quiet, Playful or Chaotic motion. In alpha.7, **Preferences → Notch** controls presentation, size and interaction; **Instruments** selects drives and metrics; **Startup & updates** controls login startup and updates. Startup is opt-in; replacing an installation should preserve its existing enabled/disabled choice.
 
 ### Controls and must-keeps
 
@@ -51,6 +51,8 @@ Media playback, calendar, notes, tasks, deadline timers, battery, an opt-in came
 **Codex:** connect through the official Codex CLI/app-server. Saved connection intent and last-known allowance survive retry failures and restarts; stale readings retain their original time. Explicit disconnect clears them. Codex allowance describes Codex account usage; ordinary ChatGPT chat allowance has no supported local source.
 
 **Claude:** enable the reversible Claude Code statusline/hook bridge from Connections. Existing owned version paths can migrate without replacing unrelated Claude settings. Configured, waiting, connected and error states are distinct. Authentication remains with Claude Code; a configured bridge needs Claude Code to provide an actual reading.
+
+The alpha.7 candidate fixes an installed-profile guard that prevented Codex Connect/Disconnect. Connections shows each action's full result and distinguishes an enabled Claude bridge from an actual reading. Start or restart Claude Code after enabling its bridge. Isolated smoke tests disable both connectors and use temporary profiles.
 
 Five-hour and other windows appear only when reported by the provider. Allowance drain averages fresh consumption against elapsed time and estimates depletion at the current pace. Exact cumulative spent-token counts are unavailable from these quota sources; allowance percentages are not relabeled as token counts.
 

@@ -2399,7 +2399,7 @@ dependencies = [
 
 [[package]]
 name = "neon-hud-native"
-version = "0.2.0-alpha.6"
+version = "0.2.0-alpha.7"
 dependencies = [
  "auto-launch",
  "base64 0.22.1",

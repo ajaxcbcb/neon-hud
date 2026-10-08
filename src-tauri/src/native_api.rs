@@ -16,15 +16,25 @@ pub struct NativeBackend {
 
 impl NativeBackend {
     pub fn new(config_dir: PathBuf) -> Result<Self, String> {
+        Self::with_preview(config_dir, false)
+    }
+
+    /// Explicit test mode; an installed profile's directory name is not a
+    /// capability boundary. The native app keeps its existing isolated profile.
+    pub fn new_preview(config_dir: PathBuf) -> Result<Self, String> {
+        Self::with_preview(config_dir, true)
+    }
+
+    fn with_preview(config_dir: PathBuf, preview: bool) -> Result<Self, String> {
         if config_dir.as_os_str().is_empty() {
             return Err("App config directory is empty".into());
         }
         // Claude hooks are installed once per account and their CLI writes to
         // the shared app directory. Only preferences use the preview subfolder.
-        let preview = config_dir
+        let native_profile = config_dir
             .file_name()
             .is_some_and(|n| n == "native-preview");
-        let bridge_dir = if preview {
+        let bridge_dir = if native_profile && !preview {
             config_dir.parent().unwrap_or(&config_dir).to_path_buf()
         } else {
             config_dir.clone()
@@ -79,7 +89,18 @@ impl NativeBackend {
         if !self.preview {
             let _ = bridge::restore_relocated(&self.bridge_dir);
         }
-        let (claude, attention) = bridge::read_provider(&self.bridge_dir);
+        let (claude, attention) = if self.preview {
+            (
+                Usage::unavailable(
+                    "claude",
+                    "Test mode",
+                    "Connections are disabled in isolated test mode.",
+                ),
+                Vec::new(),
+            )
+        } else {
+            bridge::read_provider(&self.bridge_dir)
+        };
         usages.push(claude.clone());
         usages.push(Usage {
             surface: "claude-code".into(),
@@ -89,14 +110,14 @@ impl NativeBackend {
         serde_json::to_value(super::ProviderSnapshot {
             usages,
             attention,
-            claude_bridge_enabled: bridge::is_enabled(),
+            claude_bridge_enabled: !self.preview && bridge::is_enabled(),
         })
         .map_err(|e| e.to_string())
     }
 
     pub fn connect_codex(&mut self, login: bool) -> Result<String, String> {
         if self.preview {
-            return Err("Connections are disabled in native preview".into());
+            return Err("Connections are disabled in isolated test mode".into());
         }
         self.persist_codex_enabled(true)?;
         self.codex
@@ -105,7 +126,7 @@ impl NativeBackend {
 
     pub fn disconnect_codex(&mut self) -> Result<(), String> {
         if self.preview {
-            return Err("Connections are disabled in native preview".into());
+            return Err("Connections are disabled in isolated test mode".into());
         }
         self.persist_codex_enabled(false)?;
         self.codex.set_enabled(false);
@@ -124,14 +145,23 @@ impl NativeBackend {
     }
 
     pub fn install_claude_bridge(&self) -> Result<String, String> {
+        if self.preview {
+            return Err("Connections are disabled in isolated test mode".into());
+        }
         bridge::install(&self.bridge_dir)
     }
 
     pub fn remove_claude_bridge(&self) -> Result<String, String> {
+        if self.preview {
+            return Err("Connections are disabled in isolated test mode".into());
+        }
         bridge::remove(&self.bridge_dir)
     }
 
     pub fn dismiss_attention(&self, id: &str) -> Result<(), String> {
+        if self.preview {
+            return Err("Connections are disabled in isolated test mode".into());
+        }
         bridge::dismiss(&self.bridge_dir, id)
     }
 }
@@ -151,7 +181,7 @@ mod tests {
             std::process::id(),
             super::super::now().to_bits()
         ));
-        let mut backend = NativeBackend::new(dir.clone()).unwrap();
+        let mut backend = NativeBackend::new_preview(dir.clone()).unwrap();
         let mut profile = backend.load_profile().unwrap();
         assert_eq!(profile["size"], "compressed");
         profile["theme"] = Value::String("aurora".into());
@@ -167,11 +197,12 @@ mod tests {
         assert!(providers["attention"].is_array());
         assert!(providers["claudeBridgeEnabled"].is_boolean());
         let original = std::fs::read(dir.join("settings.json")).unwrap();
-        let preview = NativeBackend::new(dir.join("native-preview")).unwrap();
-        assert_eq!(preview.bridge_dir, dir);
-        let mut profile = preview.load_profile().unwrap();
+        let installed = NativeBackend::new(dir.join("native-preview")).unwrap();
+        assert_eq!(installed.bridge_dir, dir);
+        assert!(!installed.preview);
+        let mut profile = installed.load_profile().unwrap();
         profile["theme"] = Value::String("cyberpunk".into());
-        preview.save_profile(profile).unwrap();
+        installed.save_profile(profile).unwrap();
         assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(), original);
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -190,10 +221,38 @@ mod tests {
         stale["codexEnabled"] = Value::Bool(false);
         restored.save_profile(stale).unwrap();
         assert_eq!(restored.load_profile().unwrap()["codexEnabled"], true);
-        let preview = NativeBackend::new(dir.join("native-preview")).unwrap();
+        let preview = NativeBackend::new_preview(dir.join("native-preview")).unwrap();
         assert!(!preview.codex.is_enabled());
         restored.persist_codex_enabled(false).unwrap();
         assert!(!NativeBackend::new(dir.clone()).unwrap().codex.is_enabled());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn installed_native_profile_restores_codex_but_tests_cannot_modify_connections() {
+        let dir = std::env::temp_dir().join(format!(
+            "neon-native-capability-{}-{}",
+            std::process::id(),
+            super::super::now().to_bits()
+        ));
+        let path = dir.join("native-preview");
+        let installed = NativeBackend::new(path.clone()).unwrap();
+        installed.persist_codex_enabled(true).unwrap();
+        let restored = NativeBackend::new(path.clone()).unwrap();
+        assert!(restored.codex.is_enabled());
+        assert!(!restored.preview);
+        assert_eq!(restored.bridge_dir, dir);
+        let original = std::fs::read(path.join("settings.json")).unwrap();
+        let mut test = NativeBackend::new_preview(path.clone()).unwrap();
+        assert!(!test.codex.is_enabled());
+        assert!(test.connect_codex(false).is_err());
+        assert!(test.disconnect_codex().is_err());
+        assert!(test.install_claude_bridge().is_err());
+        assert!(test.remove_claude_bridge().is_err());
+        assert!(test.dismiss_attention("synthetic").is_err());
+        let snapshot = test.providers("normal").unwrap();
+        assert_eq!(snapshot["claudeBridgeEnabled"], false);
+        assert_eq!(std::fs::read(path.join("settings.json")).unwrap(), original);
+        assert!(!path.join("claude-bridge.json").exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

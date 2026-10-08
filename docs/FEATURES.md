@@ -45,7 +45,7 @@ Denied permissions and absent hardware/services remain visible. Notes, tasks, ti
 
 ### Small, interactive and persistent
 
-Nook measures 240 × 40 logical pixels collapsed, 520 × 112 at hover and 900 × 192 expanded, clamped to the monitor work area. The alternate floating pill measures 160 × 56 compressed or 280 × 56 regular. Right-click/Shift+F10 opens Settings, compression, pause/resume, hide, reset position and Quit. Hover panels follow the current monitor and open away from its edges. Tray/menu-bar access remains available while hidden.
+The alpha.7 candidate offers Mini Nook (200 × 36 collapsed, 480 × 104 hover) and Regular Nook (240 × 40 collapsed, 520 × 112 hover), with a 900 × 192 expanded panel, clamped to the monitor work area. **Preferences → Notch** selects layout, size, hover, auto-close, pin and placement. These settings save independently of utility content. Nook follows selected metrics and theme; Playful and Chaos have distinct finite motion, with stable click targets during expansion and corrected high-DPI placement. The alternate floating pill measures 160 × 56 compressed or 280 × 56 regular. Right-click/Shift+F10 opens Settings, compression, pause/resume, hide, reset position and Quit. Hover panels follow the current monitor and open away from its edges. Tray/menu-bar access remains available while hidden.
 
 Neon Circuit, Cyberpunk Night and Aurora apply to the custom native UI. Quiet, Playful and Chaotic motion react to input and respect reduced-motion preferences. The Rust renderer uses egui/glow, with no HTML/CSS/JavaScript or WebView in its rendering path. The three setup steps are fixed pages without scrolling or an OS title bar.
 

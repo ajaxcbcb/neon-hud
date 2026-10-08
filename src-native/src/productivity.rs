@@ -946,6 +946,29 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn notch_settings_survive_reopening_store_without_losing_utilities() {
+        let (dir, store) = test_store();
+        let mut state = ProductivityState::default();
+        state.set_note("Keep my note".into()).unwrap();
+        state.add_task("Keep my task".into()).unwrap();
+        state.timer.start(1000, 300_000).unwrap();
+        state.add_file(dir.join("retained-file.txt"), 1000).unwrap();
+        state.presentation.size = crate::nook::NookSize::Mini;
+        state.presentation.hover_to_peek = false;
+        state.presentation.auto_collapse = false;
+        state.presentation.pinned = true;
+        state.presentation.nook_position = Some(crate::nook::SavedNookPosition {
+            monitor_id: "second".into(),
+            x: 42,
+            y: 16,
+        });
+        store.save(&state).unwrap();
+        drop(store);
+        let restored = Store::new(&dir).unwrap().load().unwrap().state;
+        assert_eq!(restored, state);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn task_crud_and_bounds() {
         let mut state = ProductivityState::default();
         assert!(state.set_note("x".repeat(MAX_NOTE_BYTES + 1)).is_err());

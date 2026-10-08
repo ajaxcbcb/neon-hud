@@ -330,6 +330,81 @@ try {
             throw 'Physical Nook note/task/timer actions were not retained in the saved utility state'
         }
         $nookChecks += [pscustomobject]@{ state='saved-controls'; realPointerInput=$true; realKeyboardInput=$true; noteRetained=$true; taskRetained=$true; timerRunning=$true }
+
+        # Read only rectangles emitted by this isolated process. No live account,
+        # bridge, startup or installed profile is touched by these settings clicks.
+        function Wait-SettingsControl([string]$Key, [string]$Value = '') {
+            $controlDeadline = (Get-Date).AddSeconds(2)
+            do {
+                $process.Refresh()
+                if ($process.HasExited) { throw 'Nook exited during settings interaction' }
+                $trace = Get-Content -LiteralPath $stderr -Raw
+                $controls = @([regex]::Matches($trace, 'NEON_CONTROL (\{[^\r\n]+\})') | ForEach-Object {
+                    $_.Groups[1].Value | ConvertFrom-Json
+                } | Where-Object key -eq $Key)
+                $control = if ($controls.Count -gt 0) { $controls[-1] } else { $null }
+                if ($null -ne $control -and ($Value -eq '' -or $control.value -eq $Value)) { return $control }
+                Start-Sleep -Milliseconds 60
+            } while ((Get-Date) -lt $controlDeadline)
+            throw "Settings control $Key did not reach $Value"
+        }
+        function Click-SettingsControl([string]$Key, [string]$Value) {
+            $control = Wait-SettingsControl $Key
+            $window = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object Title -eq 'Neon HUD · Settings' | Select-Object -First 1
+            if ($null -eq $window) { throw 'Owned settings window disappeared' }
+            [NativeHudCapture]::SetForegroundWindow($window.Handle) | Out-Null
+            [NativeHudCapture]::SetCursorPos($window.Rect.Left+[int](($control.rect[0]+$control.rect[2])/2), $window.Rect.Top+[int](($control.rect[1]+$control.rect[3])/2)) | Out-Null
+            Start-Sleep -Milliseconds 80
+            [NativeHudCapture]::Click($false)
+            Wait-SettingsControl $Key $Value | Out-Null
+        }
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-26, $hudWindow.Rect.Top+21) | Out-Null
+        [NativeHudCapture]::Click($false)
+        Wait-SettingsControl 'page-0' 'selected' | Out-Null
+        Click-SettingsControl 'theme-aurora' 'aurora'
+        Click-SettingsControl 'motion-chaotic' 'chaotic'
+        Click-SettingsControl 'page-2' 'selected'
+        Click-SettingsControl 'notch-mini' 'selected'
+        Click-SettingsControl 'notch-hover' 'off'
+        Click-SettingsControl 'notch-collapse' 'off'
+        Click-SettingsControl 'notch-pin' 'off'
+        $hudWindow = Wait-NookState 'expanded' 900 192 'Quick actions'
+        [NativeHudCapture]::SetForegroundWindow($hudWindow.Handle) | Out-Null
+        [NativeHudCapture]::Escape()
+        $hudWindow = Wait-NookState 'collapsed' 200 36 'Quick actions'
+        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Left+80, $hudWindow.Rect.Top+18) | Out-Null
+        Start-Sleep -Milliseconds 750
+        $hudWindow = Wait-NookState 'collapsed' 200 36 'Quick actions'
+        $nookChecks += Save-NookFrame $hudWindow 'mini-hover-disabled'
+        [NativeHudCapture]::Click($false)
+        $hudWindow = Wait-NookState 'expanded' 900 192 'Quick actions'
+        [NativeHudCapture]::SetCursorPos([NativeHudCapture]::GetSystemMetrics(76)+10, [NativeHudCapture]::GetSystemMetrics(77)+[NativeHudCapture]::GetSystemMetrics(79)-10) | Out-Null
+        Start-Sleep -Milliseconds 750
+        $hudWindow = Wait-NookState 'expanded' 900 192 'Quick actions'
+        $nookChecks += Save-NookFrame $hudWindow 'auto-close-disabled'
+        Click-SettingsControl 'notch-hover' 'on'
+        Click-SettingsControl 'notch-collapse' 'on'
+        Click-SettingsControl 'notch-pin' 'on'
+        $hudWindow = Wait-NookState 'pinned' 900 192 'Quick actions'
+        Click-SettingsControl 'preferences-1' 'selected'
+        Click-SettingsControl 'metric-cpu' 'off'
+        Click-SettingsControl 'metric-cpu' 'on'
+        Click-SettingsControl 'page-1' 'selected'
+        Wait-SettingsControl 'codex-connect' 'disabled' | Out-Null
+        Wait-SettingsControl 'claude-enable' 'disabled' | Out-Null
+        $settingsWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object Title -eq 'Neon HUD · Settings' | Select-Object -First 1
+        $nookChecks += Save-NookFrame $settingsWindow 'connections-test-mode'
+        Click-SettingsControl 'page-2' 'selected'
+        Click-SettingsControl 'preferences-0' 'selected'
+        $settingsWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object Title -eq 'Neon HUD · Settings' | Select-Object -First 1
+        $nookChecks += Save-NookFrame $settingsWindow 'notch-settings'
+        Start-Sleep -Milliseconds 700
+        $utilityState = Get-Content -LiteralPath $utilityPath -Raw | ConvertFrom-Json
+        $profile = Get-Content -LiteralPath (Join-Path (Split-Path $utilityPath) 'settings.json') -Raw | ConvertFrom-Json
+        if ($profile.theme -ne 'aurora' -or $profile.motion -ne 'chaotic' -or -not $profile.metrics.cpu -or $utilityState.presentation.size -ne 'mini' -or -not $utilityState.presentation.hover_to_peek -or -not $utilityState.presentation.auto_collapse -or -not $utilityState.presentation.pinned -or $utilityState.note -ne 'Nook cloud note' -or @($utilityState.tasks | Where-Object text -eq 'Nook cloud task').Count -ne 1 -or $utilityState.timer.status -ne 'running') {
+            throw 'Physical settings edits were not saved or utility content changed'
+        }
+        $nookChecks += [pscustomobject]@{ state='settings-saved'; realPointerInput=$true; theme='aurora'; motion='chaotic'; size='mini'; hoverDisabledProven=$true; autoCloseDisabledProven=$true; pinApplied=$true; retainedUtilities=$true; testConnectionsDisabled=$true }
     }
 
     $hoverChecks = @()
@@ -530,12 +605,12 @@ try {
         }
     }
 
-    $exitDeadline = (Get-Date).AddSeconds(35)
+    $exitDeadline = (Get-Date).AddSeconds($(if ($NookInteraction) { 65 } else { 35 }))
     do {
         Start-Sleep -Milliseconds 200
         $process.Refresh()
     } while (-not $process.HasExited -and (Get-Date) -lt $exitDeadline)
-    if (-not $process.HasExited) { throw 'Native --smoke did not autoexit within 35 seconds after capture' }
+    if (-not $process.HasExited) { throw 'Native --smoke did not autoexit within its capture deadline' }
     if ($process.ExitCode -ne 0) { throw "Native --smoke exited with code $($process.ExitCode)" }
     $hiddenLifecycle = $null
     if ($ContextMenu -and -not $QuitMenu) {
@@ -582,5 +657,5 @@ try {
     throw
 } finally {
     $process.Refresh()
-    if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+    if (-not $process.HasExited) { Write-Warning 'Isolated smoke process is still running; its own timeout handles shutdown.' }
 }

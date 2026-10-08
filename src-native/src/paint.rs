@@ -267,6 +267,125 @@ pub fn motion_card(
     response
 }
 
+pub fn nook_preview(ui: &mut egui::Ui, rect: Rect, p: Palette, mini: bool, reduced: bool) {
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 18., p.panel);
+    painter.rect_stroke(
+        rect,
+        18.,
+        Stroke::new(1., p.dim.gamma_multiply(0.4)),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        rect.left_top() + Vec2::new(16., 20.),
+        egui::Align2::LEFT_CENTER,
+        "NOOK PREVIEW",
+        FontId::monospace(11.),
+        p.ink,
+    );
+    painter.text(
+        rect.right_top() + Vec2::new(-14., 20.),
+        egui::Align2::RIGHT_CENTER,
+        "SAMPLE DATA",
+        FontId::monospace(9.),
+        p.pop,
+    );
+    let response = ui.interact(
+        rect.shrink2(Vec2::new(12., 40.)),
+        ui.id().with("nook-preview"),
+        Sense::hover(),
+    );
+    let t = ui.ctx().animate_bool_with_time(
+        ui.id().with("nook-preview-motion"),
+        response.hovered(),
+        if reduced { 0. } else { 0.18 },
+    );
+    let closed = if mini {
+        Vec2::new(200., 36.)
+    } else {
+        Vec2::new(240., 40.)
+    };
+    let size = closed + (Vec2::new(338., 110.) - closed) * t;
+    let capsule = Rect::from_center_size(rect.center(), size);
+    painter.rect_filled(capsule, 18, Color32::from_rgb(8, 9, 12));
+    painter.rect_stroke(
+        capsule,
+        18,
+        Stroke::new(1., p.accent.gamma_multiply(0.55)),
+        egui::StrokeKind::Inside,
+    );
+    icon(
+        &painter,
+        capsule.left_top() + Vec2::new(22., 20.),
+        "cpu",
+        p.accent,
+        16.,
+    );
+    painter.text(
+        capsule.left_top() + Vec2::new(37., 20.),
+        egui::Align2::LEFT_CENTER,
+        "42%",
+        FontId::monospace(12.),
+        p.ink,
+    );
+    icon(
+        &painter,
+        capsule.right_top() - Vec2::new(73., -20.),
+        "codex",
+        p.pop,
+        16.,
+    );
+    painter.text(
+        capsule.right_top() - Vec2::new(58., -20.),
+        egui::Align2::LEFT_CENTER,
+        "65%",
+        FontId::monospace(12.),
+        p.ink,
+    );
+    icon(
+        &painter,
+        capsule.right_top() - Vec2::new(19., -20.),
+        "settings",
+        p.dim,
+        15.,
+    );
+    if t > 0.2 {
+        let painter = painter.with_clip_rect(capsule.shrink(4.));
+        for (i, (key, label)) in [
+            ("cpu", "42%"),
+            ("ram", "33%"),
+            ("network", "2 MB/s"),
+            ("claude", "38%"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let x = capsule.left() + 42. + i as f32 * (capsule.width() - 84.) / 3.;
+            icon(
+                &painter,
+                Pos2::new(x, capsule.top() + 58.),
+                key,
+                p.accent.gamma_multiply(t),
+                16.,
+            );
+            painter.text(
+                Pos2::new(x, capsule.top() + 81.),
+                egui::Align2::CENTER_CENTER,
+                label,
+                FontId::monospace(10.),
+                p.ink.gamma_multiply(t),
+            );
+        }
+    }
+    painter.text(
+        rect.center_bottom() - Vec2::new(0., 22.),
+        egui::Align2::CENTER_CENTER,
+        "Hover here to peek · your compact native notch",
+        FontId::proportional(11.),
+        p.dim,
+    );
+}
+
 pub fn appearance_preview(ui: &mut egui::Ui, rect: Rect, p: Palette, compact: bool) {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 18., p.panel);
