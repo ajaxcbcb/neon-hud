@@ -2,6 +2,7 @@ use super::{now, Usage, UsageWindow};
 use serde_json::{json, Value};
 use std::{
     io::{self, BufRead, BufReader, Write},
+    path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc::{self, Receiver},
     thread,
@@ -20,6 +21,35 @@ pub struct CodexState {
     retry_after: Option<Instant>,
     retry_delay: Duration,
 }
+
+fn executable_candidates(
+    local_app_data: Option<&Path>,
+    path: impl IntoIterator<Item = PathBuf>,
+    windows: bool,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if windows {
+        if let Some(root) = local_app_data {
+            candidates.push(root.join("Programs/OpenAI/Codex/bin/codex.exe"));
+        }
+    }
+    candidates.extend(
+        path.into_iter()
+            .map(|directory| directory.join(if windows { "codex.exe" } else { "codex" })),
+    );
+    if windows {
+        if let Some(root) = local_app_data {
+            let base = root.join("hermes/node/node_modules");
+            candidates.push(base.join("@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
+            candidates.push(
+                base.join("@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"),
+            );
+            candidates.push(base.join("@openai/codex/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
+        }
+    }
+    candidates
+}
+
 impl Default for CodexState {
     fn default() -> Self {
         Self {
@@ -109,22 +139,16 @@ impl CodexState {
         self.last = None;
         self.usage = Usage::unavailable("codex", "Codex app-server", "Disconnected.");
     }
-    fn executable() -> Option<std::path::PathBuf> {
-        let mut candidates = Vec::new();
-        if let Ok(root) = std::env::var("LOCALAPPDATA") {
-            let base = std::path::Path::new(&root).join("hermes/node/node_modules");
-            candidates.push(base.join("@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
-            candidates.push(
-                base.join("@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"),
-            );
-            candidates.push(base.join("@openai/codex/vendor/x86_64-pc-windows-msvc/bin/codex.exe"));
-        }
-        if let Ok(path) = std::env::var("PATH") {
-            for part in std::env::split_paths(&path) {
-                candidates.push(part.join(if cfg!(windows) { "codex.exe" } else { "codex" }));
-            }
-        }
-        candidates.into_iter().find(|p| p.is_file())
+    fn executable() -> Option<PathBuf> {
+        let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        executable_candidates(
+            local_app_data.as_deref(),
+            std::env::split_paths(&path),
+            cfg!(windows),
+        )
+        .into_iter()
+        .find(|candidate| candidate.is_file())
     }
     fn start(&mut self) -> Result<(), String> {
         let exe = Self::executable().ok_or("Codex native CLI executable was not found")?;
@@ -401,6 +425,42 @@ fn parse_limits(result: &Value) -> Vec<UsageWindow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_prefers_desktop_cli_then_path_before_vendor_fallbacks() {
+        let root = Path::new("local-app-data");
+        let path = [PathBuf::from("first-path"), PathBuf::from("second-path")];
+        let candidates = executable_candidates(Some(root), path.clone(), true);
+        assert_eq!(candidates.len(), 6);
+        assert_eq!(
+            candidates[0],
+            root.join("Programs/OpenAI/Codex/bin/codex.exe")
+        );
+        assert_eq!(candidates[1], path[0].join("codex.exe"));
+        assert_eq!(candidates[2], path[1].join("codex.exe"));
+        let available = [candidates[2].clone(), candidates[3].clone()];
+        assert_eq!(
+            candidates
+                .iter()
+                .find(|candidate| available.contains(candidate)),
+            Some(&candidates[2])
+        );
+        assert!(candidates.iter().all(|candidate| candidate
+            .extension()
+            .is_some_and(|extension| extension == "exe")));
+    }
+    #[test]
+    fn macos_uses_path_without_windows_candidates() {
+        let directory = PathBuf::from("cli-bin");
+        assert_eq!(
+            executable_candidates(
+                Some(Path::new("unused-local-data")),
+                [directory.clone()],
+                false
+            ),
+            vec![directory.join("codex")]
+        );
+        assert!(executable_candidates(None, Vec::<PathBuf>::new(), true).is_empty());
+    }
     #[test]
     fn limit_parsing_ignores_missing_and_out_of_range() {
         assert!(parse_limits(&json!({})).is_empty());

@@ -6,6 +6,7 @@ Current native preview: [0.2.0-alpha.6](https://github.com/ajaxcbcb/neon-hud/rel
 
 - Alpha.7 candidate: repair Codex Connect/Disconnect and saved-intent restoration in installed native profiles; keep explicit smoke mode isolated from real Codex and Claude configuration.
 - Show full connector action feedback and Claude bridge-enabled/waiting status in Connections.
+- Prefer the installed OpenAI Codex executable on Windows, then PATH, retaining native vendor binaries as fallbacks without invoking shell shims.
 - Add Preferences → Notch: Mini/Regular capsule, hover peek, auto-close, pin, screen and reset; persist these independently of notes, tasks and timers.
 - Honor selected instruments and theme in Nook; distinguish Playful/Chaos, shorten hover response, preserve click targets during expansion and correct scaling on high-DPI displays.
 - Add persistence, interaction-policy, motion and scale regressions, plus isolated physical Windows settings checks. See the [candidate notes](docs/releases/v0.2.0-alpha.7.md) for acceptance status.

@@ -368,8 +368,21 @@ try {
             [NativeHudCapture]::Click($false)
             Wait-SettingsControl $Key $Value | Out-Null
         }
-        [NativeHudCapture]::SetCursorPos($hudWindow.Rect.Right-26, $hudWindow.Rect.Top+21) | Out-Null
+        $gear = Wait-SettingsControl 'nook-settings' 'closed'
+        $hudWindow = [NativeHudCapture]::VisibleWindows([uint32]$process.Id) | Where-Object Title -eq 'Neon HUD Native' | Select-Object -First 1
+        if ($null -eq $hudWindow) { throw 'Owned Nook window disappeared before settings' }
+        [NativeHudCapture]::SetForegroundWindow($hudWindow.Handle) | Out-Null
+        $gearPoint = [NativeHudCapture+POINT]::new()
+        $gearPoint.X = [int][Math]::Round(($gear.rect[0]+$gear.rect[2])/2*$gear.scale)
+        $gearPoint.Y = [int][Math]::Round(($gear.rect[1]+$gear.rect[3])/2*$gear.scale)
+        if (-not [NativeHudCapture]::ClientToScreen($hudWindow.Handle, [ref]$gearPoint)) { throw 'Nook client origin unavailable' }
+        [NativeHudCapture]::SetCursorPos($gearPoint.X, $gearPoint.Y) | Out-Null
+        Start-Sleep -Milliseconds 100
+        if ([NativeHudCapture]::GetForegroundWindow() -ne $hudWindow.Handle -or [NativeHudCapture]::WindowFromPoint($gearPoint) -ne $hudWindow.Handle) {
+            throw 'Nook settings gear is not exposed in the owned foreground window'
+        }
         [NativeHudCapture]::Click($false)
+        Wait-SettingsControl 'nook-settings' 'open' | Out-Null
         Wait-SettingsControl 'page-0' 'selected' | Out-Null
         Click-SettingsControl 'theme-aurora' 'aurora'
         Click-SettingsControl 'motion-chaotic' 'chaotic'

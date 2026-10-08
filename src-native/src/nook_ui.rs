@@ -804,10 +804,17 @@ impl App {
         }
         let controls =
             Rect::from_min_size(Pos2::new(r.right() - 30., r.top() + 3.), Vec2::splat(30.));
-        if icon_button(ui, controls, "settings", "Settings", false, accent).clicked() {
+        let settings_response = icon_button(ui, controls, "settings", "Settings", false, accent);
+        if settings_response.clicked() {
             self.settings = true;
             self.hover = None;
         }
+        self.trace_control(
+            ui,
+            "nook-settings",
+            &settings_response,
+            if self.settings { "open" } else { "closed" },
+        );
         if expanded {
             let pin =
                 Rect::from_min_size(Pos2::new(r.right() - 68., r.top() + 3.), Vec2::splat(30.));
